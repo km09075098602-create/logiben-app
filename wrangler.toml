@@ -12,7 +12,7 @@ directory = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "logiben"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "6adf2872-881a-411b-bfe9-d79a6bc21c49"
 
 # 秘密ではない設定
 [vars]
