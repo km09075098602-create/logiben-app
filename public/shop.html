@@ -18,6 +18,7 @@
       <button type="button" data-tab="orders" class="active">注文</button>
       <button type="button" data-tab="menu">メニュー</button>
       <button type="button" data-tab="payments">お支払い</button>
+      <button type="button" data-tab="closed">休業日</button>
     </div>
 
     <!-- ===== 注文 ===== -->
@@ -49,6 +50,11 @@
       </div>
     </section>
 
+    <!-- ===== 休業日 ===== -->
+    <section id="tab-closed" hidden>
+      <div class="card" id="closed"></div>
+    </section>
+
     <!-- ===== お支払い ===== -->
     <section id="tab-payments" hidden>
       <div class="card no-print">
@@ -63,13 +69,14 @@
 
   <script type="module">
     import { api, yen, esc, logout, toast, dateLabel, deadlineLabel } from '/common.js';
+    import { renderClosedDays } from '/closed-days-ui.js';
     document.getElementById('logout').onclick = logout;
     const $ = (id) => document.getElementById(id);
 
     document.querySelectorAll('.tabs button').forEach((b) =>
       b.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
-        for (const t of ['orders', 'menu', 'payments']) $('tab-' + t).hidden = b.dataset.tab !== t;
+        for (const t of ['orders', 'menu', 'payments', 'closed']) $('tab-' + t).hidden = b.dataset.tab !== t;
       })
     );
 
@@ -98,7 +105,9 @@
 
     async function loadOrders() {
       const r = await api('/api/shop/orders?date=' + $('date').value);
-      const status = r.fixed
+      const status = r.closed_reason
+        ? `<span class="badge">お休み:${esc(r.closed_reason)}</span>`
+        : r.fixed
         ? `<span class="badge" style="background:var(--ok)">確定</span>`
         : `<span class="badge" style="background:#e0a100">受付中</span> <span class="sub">締め切り ${deadlineLabel(r.deadline)} まで数が変わります</span>`;
       if (!r.total) {
@@ -221,6 +230,7 @@
     loadOrders();
     loadMenu();
     loadPayment();
+    renderClosedDays($('closed'), { base: '/api/shop/closed-days', showHolidays: true });
   </script>
 </body>
 </html>

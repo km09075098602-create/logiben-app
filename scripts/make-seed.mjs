@@ -3,6 +3,7 @@
 import { pbkdf2Sync, createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { DEFAULT_SETTINGS } from '../src/rules.js';
+import { holidaysBetween } from '../src/holidays.js';
 
 // お試し用データなので、毎回同じ結果になるようにソルトを固定(本番の登録では毎回ランダム)
 const hash = (pw, login) => {
@@ -99,6 +100,16 @@ for (let day = 0; day <= 14; day++) {
     lines.push(orderSql(uid, menu[(uid * 3 + day) % menu.length], `${jst}, '+${day} days')`));
   }
 }
+
+// 休業日の例:年末年始(全体)と、キッチン大橋の店休日(1週間後)
+for (const d of ['2026-12-29', '2026-12-30', '2026-12-31'])
+  lines.push(`INSERT INTO closed_days (shop_id, date, note) VALUES (NULL, '${d}', '年末年始');`);
+lines.push(`INSERT INTO closed_days (shop_id, date, note) SELECT 2, ${jst}, '+7 days'), '店休日';`);
+// 祝日・休業日の注文は消す(上の仮注文は土日だけを除いているため)
+const holidays = holidaysBetween('2026-01-01', '2028-12-31').map((h) => `'${h.date}'`).join(', ');
+lines.push(`DELETE FROM orders WHERE delivery_date IN (${holidays});`);
+lines.push(`DELETE FROM orders WHERE delivery_date IN (SELECT date FROM closed_days WHERE shop_id IS NULL);`);
+lines.push(`DELETE FROM orders WHERE EXISTS (SELECT 1 FROM closed_days d WHERE d.shop_id = orders.shop_id AND d.date = orders.delivery_date);`);
 
 writeFileSync(new URL('../db/seed.sql', import.meta.url), lines.join('\n') + '\n');
 console.log('db/seed.sql を作成しました');

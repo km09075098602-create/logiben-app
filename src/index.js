@@ -14,6 +14,7 @@ import { registerBillingRoutes } from './billing-routes.js';
 import { loadSettings } from './settings.js';
 import { dayOrders } from './queries.js';
 import { registerPortalRoutes } from './portal-routes.js';
+import { registerClosedDayRoutes } from './closed-days.js';
 import {
   DEFAULT_SETTINGS,
   allocateMonth,
@@ -21,6 +22,7 @@ import {
   isOrderOpen,
   orderableDates,
   deadlineFor,
+  closedReason,
   todayJST,
 } from './rules.js';
 
@@ -172,8 +174,11 @@ app.get('/api/employee/menu', async (c) => {
     .prepare(
       `SELECT m.id, m.name, m.description, m.price, s.id AS shop_id, s.name AS shop_name
        FROM menu_items m JOIN shops s ON s.id = m.shop_id
-       WHERE m.active = 1 AND s.active = 1 ORDER BY s.id, m.price`
+       WHERE m.active = 1 AND s.active = 1
+         AND s.id NOT IN (SELECT shop_id FROM closed_days WHERE date = ? AND shop_id IS NOT NULL) -- その日休みのお店は出さない
+       ORDER BY s.id, m.price`
     )
+    .bind(date)
     .all();
   const current = await db
     .prepare(`SELECT id, menu_item_id, item_name, price FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`)
@@ -183,6 +188,10 @@ app.get('/api/employee/menu', async (c) => {
   return c.json({
     date,
     open: isOrderOpen(date, s),
+    closed_reason: closedReason(date, s),
+    shops_closed: (
+      await db.prepare('SELECT s.name FROM closed_days d JOIN shops s ON s.id = d.shop_id WHERE d.date = ? AND s.active = 1').bind(date).all()
+    ).results.map((r) => r.name), // この日お休みのお店
     deadline: deadlineFor(date, s).toISOString(),
     current: current ? { ...current, ...allocated } : null,
     items: items.map((it) => {
@@ -198,12 +207,15 @@ app.post('/api/employee/orders', async (c) => {
   const user = c.get('user');
   const { date, menu_item_id } = await c.req.json().catch(() => ({}));
   const s = await loadSettings(db);
+  if (isDate(date) && closedReason(date, s)) return fail(c, 400, `この日はお休みです(${closedReason(date, s)})`);
   if (!isDate(date) || !isOrderOpen(date, s)) return fail(c, 400, 'この日の注文は締め切られています');
   const item = await db
     .prepare(`SELECT m.* FROM menu_items m JOIN shops s ON s.id = m.shop_id WHERE m.id = ? AND m.active = 1 AND s.active = 1`)
     .bind(Number(menu_item_id))
     .first();
   if (!item) return fail(c, 400, 'このお弁当は選べません');
+  const shopClosed = await db.prepare('SELECT 1 FROM closed_days WHERE shop_id = ? AND date = ?').bind(item.shop_id, date).first();
+  if (shopClosed) return fail(c, 400, 'このお店はこの日お休みです');
   await db
     .prepare(
       `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price)
@@ -236,7 +248,18 @@ app.get('/api/admin/orders', async (c) => {
   const date = c.req.query('date');
   if (!isDate(date)) return fail(c, 400, '日付が正しくありません');
   const s = await loadSettings(c.env.DB);
-  return c.json({ date, deadline: deadlineFor(date, s).toISOString(), ...(await dayOrders(c.env.DB, date)) });
+  const { results: shopsClosed } = await c.env.DB.prepare(
+    'SELECT s.name, d.note FROM closed_days d JOIN shops s ON s.id = d.shop_id WHERE d.date = ?'
+  )
+    .bind(date)
+    .all();
+  return c.json({
+    date,
+    deadline: deadlineFor(date, s).toISOString(),
+    closed_reason: closedReason(date, s), // 土日祝・全体の休業日なら理由
+    shops_closed: shopsClosed, // その日休みのお店
+    ...(await dayOrders(c.env.DB, date)),
+  });
 });
 
 /** 設定の一覧 */
@@ -271,6 +294,8 @@ registerMasterRoutes(app);
 registerBillingRoutes(app);
 // 会社の担当者・お店の画面(src/portal-routes.js)
 registerPortalRoutes(app, requireRole);
+// 休業日(src/closed-days.js)
+registerClosedDayRoutes(app);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 

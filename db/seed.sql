@@ -125,3 +125,10 @@ INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, ite
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 5, d, 2, 1, '唐揚げ弁当', 600 FROM (SELECT date('now', '+9 hours', '+14 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 6, d, 5, 2, 'ヘルシー野菜弁当', 620 FROM (SELECT date('now', '+9 hours', '+14 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 8, d, 4, 2, 'ハンバーグ弁当', 680 FROM (SELECT date('now', '+9 hours', '+14 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT INTO closed_days (shop_id, date, note) VALUES (NULL, '2026-12-29', '年末年始');
+INSERT INTO closed_days (shop_id, date, note) VALUES (NULL, '2026-12-30', '年末年始');
+INSERT INTO closed_days (shop_id, date, note) VALUES (NULL, '2026-12-31', '年末年始');
+INSERT INTO closed_days (shop_id, date, note) SELECT 2, date('now', '+9 hours', '+7 days'), '店休日';
+DELETE FROM orders WHERE delivery_date IN ('2026-01-01', '2026-01-12', '2026-02-11', '2026-02-23', '2026-03-20', '2026-04-29', '2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06', '2026-07-20', '2026-08-11', '2026-09-21', '2026-09-22', '2026-09-23', '2026-10-12', '2026-11-03', '2026-11-23', '2027-01-01', '2027-01-11', '2027-02-11', '2027-02-23', '2027-03-21', '2027-03-22', '2027-04-29', '2027-05-03', '2027-05-04', '2027-05-05', '2027-07-19', '2027-08-11', '2027-09-20', '2027-09-23', '2027-10-11', '2027-11-03', '2027-11-23', '2028-01-01', '2028-01-10', '2028-02-11', '2028-02-23', '2028-03-20', '2028-04-29', '2028-05-03', '2028-05-04', '2028-05-05', '2028-07-17', '2028-08-11', '2028-09-18', '2028-09-22', '2028-10-09', '2028-11-03', '2028-11-23');
+DELETE FROM orders WHERE delivery_date IN (SELECT date FROM closed_days WHERE shop_id IS NULL);
+DELETE FROM orders WHERE EXISTS (SELECT 1 FROM closed_days d WHERE d.shop_id = orders.shop_id AND d.date = orders.delivery_date);

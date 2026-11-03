@@ -1,6 +1,7 @@
 -- ロジ弁 データベースの形(テーブル定義)
 -- 注意:このファイルを実行すると、データはすべて消えて作り直されます。
 
+DROP TABLE IF EXISTS closed_days;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS users;
@@ -82,3 +83,14 @@ CREATE TABLE settings (
   label      TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+-- 休業日(土日・祝日は自動でお休みなので、ここには入れなくてよい)
+--   shop_id が空 = 全体の休業日(年末年始など。注文を受け付けない)
+--   shop_id あり = そのお店だけの休業日(そのお店のお弁当が選べなくなる)
+CREATE TABLE closed_days (
+  id      INTEGER PRIMARY KEY,
+  shop_id INTEGER REFERENCES shops(id),
+  date    TEXT NOT NULL,
+  note    TEXT
+);
+CREATE UNIQUE INDEX closed_days_unique ON closed_days (COALESCE(shop_id, 0), date);

@@ -36,10 +36,14 @@
 
     <h2 class="no-print">設定</h2>
     <form class="card no-print" id="settings"></form>
+
+    <h2 class="no-print">休業日(全体・年末年始など)</h2>
+    <div class="card no-print" id="closed"></div>
   </main>
 
   <script type="module">
     import { api, yen, dateLabel, deadlineLabel, esc, logout, toast } from '/common.js';
+    import { renderClosedDays } from '/closed-days-ui.js';
 
     document.getElementById('logout').onclick = logout;
     const dateInput = document.getElementById('date');
@@ -77,7 +81,9 @@
         .join('');
       document.getElementById('result').innerHTML = `
         <div class="card">
-          <div class="sub">${dateLabel(r.date)} の注文数(締め切り ${deadlineLabel(r.deadline)})</div>
+          <div class="sub">${dateLabel(r.date)} の注文数${r.closed_reason ? '' : `(締め切り ${deadlineLabel(r.deadline)})`}</div>
+          ${r.closed_reason ? `<div><span class="badge">お休み:${esc(r.closed_reason)}</span></div>` : ''}
+          ${r.shops_closed.length ? `<div class="sub">この日お休みのお店:${r.shops_closed.map((x) => esc(x.name) + (x.note ? `(${esc(x.note)})` : '')).join('、')}</div>` : ''}
           <div class="big">${r.total}<span style="font-size:1rem"> 食</span></div>
         </div>
         ${r.total ? `<h2>お店ごと</h2>${shops}
@@ -112,6 +118,7 @@
     if (me.role !== 'admin') location.href = '/';
     loadOrders();
     loadSettings();
+    renderClosedDays(document.getElementById('closed'), { base: '/api/admin/closed-days', showHolidays: true });
   </script>
 </body>
 </html>

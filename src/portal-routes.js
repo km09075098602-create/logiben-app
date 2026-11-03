@@ -3,7 +3,7 @@
 //   /api/company/… 会社の担当者(自分の会社の分だけ見られる)
 //   /api/shop/…    お店(自分のお店の分だけ見られる・メニューを登録できる)
 // =============================================================
-import { todayJST, addDays, deadlineFor } from './rules.js';
+import { todayJST, addDays, deadlineFor, closedReason } from './rules.js';
 import { companyInvoices, shopPayments, periodOf, recentPeriods, toCsv } from './billing.js';
 import { loadSettings } from './settings.js';
 import { ordersBetween, dayOrders } from './queries.js';
@@ -76,9 +76,12 @@ export function registerPortalRoutes(app, requireRole) {
     if (!isDate(date)) return bad(c, '日付が正しくありません');
     const s = await loadSettings(c.env.DB);
     const deadline = deadlineFor(date, s);
-    const r = await dayOrders(c.env.DB, date, { shopId: c.get('user').shop_id });
+    const shopId = c.get('user').shop_id;
+    const r = await dayOrders(c.env.DB, date, { shopId });
+    const shopClosed = await c.env.DB.prepare('SELECT note FROM closed_days WHERE shop_id = ? AND date = ?').bind(shopId, date).first();
     return c.json({
       date,
+      closed_reason: closedReason(date, s) || (shopClosed ? `お店の休業日${shopClosed.note ? '(' + shopClosed.note + ')' : ''}` : null),
       deadline: deadline.toISOString(),
       fixed: new Date() >= deadline, // 締め切りを過ぎていれば数は確定
       total: r.total,

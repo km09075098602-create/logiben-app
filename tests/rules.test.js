@@ -1,7 +1,7 @@
 // お金と締め切りのルールが正しいかを自動で確かめるテスト(npm test で実行)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SETTINGS as S, capInclTax, allocateMonth, previewShare, deadlineFor, isOrderOpen, orderableDates } from '../src/rules.js';
+import { DEFAULT_SETTINGS as S, capInclTax, allocateMonth, previewShare, deadlineFor, isOrderOpen, orderableDates, closedReason } from '../src/rules.js';
 
 const order = (id, day, price) => ({ id, delivery_date: `2027-01-${String(day).padStart(2, '0')}`, price });
 
@@ -67,4 +67,17 @@ test('土日は注文できない', () => {
 
 test('何日も先の注文はできない', () => {
   assert.equal(isOrderOpen('2027-02-26', S, new Date('2027-01-04T00:00:00Z')), false);
+});
+
+test('祝日・全体の休業日は注文できない', () => {
+  const now = new Date('2026-11-01T00:00:00Z');
+  assert.equal(isOrderOpen('2026-11-03', S, now), false); // 文化の日
+  assert.equal(isOrderOpen('2026-11-04', S, now), true);
+  const s = { ...S, closed_days: new Map([['2026-11-05', '臨時休業']]) };
+  assert.equal(isOrderOpen('2026-11-05', s, now), false);
+  assert.equal(closedReason('2026-11-05', s), '臨時休業');
+  assert.equal(closedReason('2026-11-03', s), '文化の日');
+  assert.equal(closedReason('2026-11-07', s), '土曜日');
+  const dates = orderableDates(s, now).map((d) => d.date);
+  assert.ok(!dates.includes('2026-11-03') && !dates.includes('2026-11-05') && dates.includes('2026-11-04'));
 });

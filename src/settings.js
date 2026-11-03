@@ -8,5 +8,8 @@ export async function loadSettings(db) {
     if (!(key in DEFAULT_SETTINGS)) continue;
     s[key] = typeof DEFAULT_SETTINGS[key] === 'number' ? Number(value) : value;
   }
+  // 全体の休業日(年末年始など):日付 → メモ
+  const { results: closed } = await db.prepare('SELECT date, note FROM closed_days WHERE shop_id IS NULL').all();
+  s.closed_days = new Map(closed.map((r) => [r.date, r.note || '']));
   return s;
 }

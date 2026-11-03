@@ -68,7 +68,8 @@
       const m = await api('/api/employee/menu?date=' + selected);
       const el = document.getElementById('day');
       const head = `<h2>${dateLabel(m.date)} のお弁当</h2>
-        <p class="sub">${m.open ? `締め切り:${deadlineLabel(m.deadline)}(それまでは変更・取り消しできます)` : 'この日の注文は締め切りました'}</p>`;
+        <p class="sub">${m.open ? `締め切り:${deadlineLabel(m.deadline)}(それまでは変更・取り消しできます)` : 'この日の注文は締め切りました'}</p>
+        ${m.shops_closed.length ? `<p class="sub">この日は ${m.shops_closed.map(esc).join('・')} がお休みです。</p>` : ''}`;
       const current = m.current
         ? `<div class="card current">
             <div class="sub">ご注文中</div>

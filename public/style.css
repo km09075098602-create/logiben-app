@@ -149,3 +149,8 @@ a.btn { display: inline-block; text-decoration: none; }
 .btn.secondary { background: #fff; color: var(--main); border: 1px solid var(--main); }
 .btn.small { padding: 5px 10px; font-size: .82rem; }
 tr.total td { font-weight: 700; border-top: 2px solid var(--text); }
+
+/* スマホでタブが4つ並んでも、文字が途中で折り返さないように */
+@media (max-width: 480px) {
+  .tabs button { padding: 10px 2px; font-size: .85rem; white-space: nowrap; }
+}

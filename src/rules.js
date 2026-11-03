@@ -1,3 +1,5 @@
+import { holidayName } from './holidays.js';
+
 // =============================================================
 // ロジ弁の「お金と締め切りのルール」をすべてここにまとめています。
 // ルールを変えたいときは、基本的にこのファイルだけを直します。
@@ -79,10 +81,25 @@ export function addDays(date, days) {
   return d.toISOString().slice(0, 10);
 }
 
-/** 土日なら true(祝日対応は今後) */
+/** 土日なら true */
 export function isWeekend(date) {
   const day = new Date(date + 'T00:00:00Z').getUTCDay();
   return day === 0 || day === 6;
+}
+
+/**
+ * お休みの日なら、その理由(「日曜日」「文化の日」「年末年始」など)を返す。営業日なら null。
+ * お休み = 土日・祝日・管理者が決めた全体の休業日(s.closed_days:Map 日付→メモ)
+ * ※ お店ごとの休業日は別(そのお店のお弁当だけが選べなくなる)
+ */
+export function closedReason(date, s) {
+  const day = new Date(date + 'T00:00:00Z').getUTCDay();
+  if (day === 0) return '日曜日';
+  if (day === 6) return '土曜日';
+  const holiday = holidayName(date);
+  if (holiday) return holiday;
+  if (s.closed_days?.has(date)) return s.closed_days.get(date) || '休業日';
+  return null;
 }
 
 /** その日の注文締め切り時刻 */
@@ -94,7 +111,7 @@ export function deadlineFor(date, s) {
 
 /** 今、その日の注文(変更・取り消し)ができるか */
 export function isOrderOpen(date, s, now = new Date()) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isWeekend(date)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || closedReason(date, s)) return false;
   if (date > addDays(todayJST(now), s.order_days_ahead)) return false;
   return now < deadlineFor(date, s);
 }
@@ -105,7 +122,7 @@ export function orderableDates(s, now = new Date()) {
   const today = todayJST(now);
   for (let i = 0; i <= s.order_days_ahead; i++) {
     const d = addDays(today, i);
-    if (!isWeekend(d)) out.push({ date: d, open: isOrderOpen(d, s, now) });
+    if (!closedReason(d, s)) out.push({ date: d, open: isOrderOpen(d, s, now) });
   }
   return out;
 }
