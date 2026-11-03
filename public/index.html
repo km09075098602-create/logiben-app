@@ -26,7 +26,7 @@
       <input id="password" type="password" autocomplete="current-password" required>
       <p><button type="submit" style="width:100%">ログイン</button></p>
     </form>
-    <div class="sub">
+    <div class="sub" id="demo-hint" hidden>
       <p style="margin:0 0 4px"><b>試作版のお試し用</b>(パスワードはすべて <b>demo1234</b>、管理者のみ <b>admin1234</b>)</p>
       <ul style="margin:0;padding-left:1.2em">
         <li>社員:会社コード MT01 / 社員番号 1001〜1004</li>
@@ -38,6 +38,8 @@
   </main>
   <script type="module">
     import { api, toast } from '/common.js';
+    // お試し版のときだけ、お試し用アカウントの案内を出す
+    api('/api/config').then((c) => (document.getElementById('demo-hint').hidden = !c.demo)).catch(() => {});
     const PAGES = { employee: '/order.html', company: '/company.html', shop: '/shop.html', admin: '/admin.html' };
     let type = 'employee';
     document.querySelectorAll('.tabs button').forEach((b) =>

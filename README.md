@@ -148,12 +148,21 @@ npm test           # お金・締め切りのルールの自動テスト
 
 1. https://dash.cloudflare.com/sign-up で Cloudflare のアカウントを作る(無料)
 2. `npx wrangler login` を実行し、ブラウザでログインする
+   (または、Cloudflare の画面で「APIトークン」を作り、`CLOUDFLARE_API_TOKEN` という環境変数に入れる)
 3. `npx wrangler d1 create logiben` を実行し、表示された `database_id` を `wrangler.toml` に貼る
-4. `npx wrangler d1 execute logiben --remote --file=db/schema.sql` でデータベースを作る
-   (お試しデータを入れる場合は、続けて `--file=db/seed.sql` も実行する)
-5. `npm run deploy` を実行すると、`https://logiben.(あなたのID).workers.dev` で公開される
+4. `npx wrangler d1 execute logiben --remote --file=db/schema.sql` でデータベースの形を作る
+5. 中身を入れる(どちらか)
+   - **お試し版**(仮の会社・社員・お店つき):`npx wrangler d1 execute logiben --remote --file=db/seed.sql`
+   - **本番**(設定と管理者だけ):`node scripts/make-production-init.mjs` を実行して表示される**管理者パスワードを控え**、
+     `npx wrangler d1 execute logiben --remote --file=db/production-init.sql`
+6. `wrangler.toml` の `DEMO_MODE` を、お試し版なら `"1"`、本番なら `"0"` にする(ログイン画面のお試し用アカウントの案内が出るかどうか)
+7. `npm run deploy` を実行すると、`https://logiben.(あなたのID).workers.dev` で公開される
 
-※ 本番で使う前に、仮データの管理者パスワードは必ず変えてください。
+※ お試し版のパスワード(demo1234 / admin1234)は誰でも知っているものです。お試し版のURLは関係者だけに伝え、本番は必ず「本番」の手順で作り直してください。
+
+### 本番で使い始めたあとの注意
+`db/schema.sql` を本番のデータベースに実行すると、**すべてのデータが消えます**(最初の1回だけ使う)。
+使い始めたあとにデータの形を変えるときは、データを消さない変更手順(マイグレーション)を別に用意します。
 
 ## これから作るもの
 

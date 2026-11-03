@@ -114,6 +114,9 @@ app.post('/api/logout', async (c) => {
   return c.json({ ok: true });
 });
 
+/** 画面の表示に使う公開設定(お試し版かどうか) */
+app.get('/api/config', (c) => c.json({ demo: c.env.DEMO_MODE === '1' }));
+
 app.get('/api/me', (c) => {
   const user = c.get('user');
   return user ? c.json(user) : fail(c, 401, 'ログインしてください');

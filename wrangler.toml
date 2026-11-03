@@ -18,6 +18,8 @@ database_id = "00000000-0000-0000-0000-000000000000"
 [vars]
 # LINE公式アカウントの友だち追加URL(社員の注文画面に表示)。決まったら書く
 LINE_FRIEND_URL = ""
+# "1" = お試し版(ログイン画面にお試し用アカウントを表示)。本番では "0" にする
+DEMO_MODE = "1"
 # 秘密の設定(LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN)はここに書かず、
 #   npx wrangler secret put LINE_CHANNEL_SECRET
 # のように登録する(README「LINEとつなぐ手順」)
