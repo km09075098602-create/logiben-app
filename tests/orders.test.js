@@ -145,3 +145,63 @@ test('ポイント:会社の給料日を変えると、もらえる日も変わ�
   assert.equal(p.balance, 20);
   assert.deepEqual(p.pending, []);
 });
+
+// ---------- 1日に作れる数(残り○食・売り切れ) ----------
+const addUsers = () =>
+  db.raw.exec(`INSERT INTO users (id, role, company_id, login_id, password_hash, name) VALUES
+    (2, 'employee', 1, '1002', 'x', '佐藤'), (3, 'employee', 1, '1003', 'x', '鈴木'), (4, 'employee', 1, '1004', 'x', '高橋')`);
+
+test('残り○食:お弁当ごとの上限に達したら売り切れ', async () => {
+  addUsers();
+  db.raw.exec(`UPDATE menu_items SET daily_limit = 2 WHERE id = 1`);
+  assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).remaining, 2);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).remaining, 1);
+  await placeOrder(db, { id: 3 }, '2027-01-07', 1, s);
+  const m = await dayMenu(db, user, '2027-01-07', s);
+  const item = m.items.find((i) => i.id === 1);
+  assert.equal(item.remaining, 0);
+  assert.equal(item.sold_out, true);
+  assert.equal(m.items.find((i) => i.id === 3).remaining, null); // 上限なしのお弁当
+  await assert.rejects(placeOrder(db, user, '2027-01-07', 1, s), /売り切れ/);
+  assert.equal((await db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE menu_item_id = 1`).first()).n, 2);
+});
+
+test('売り切れ:注文した本人は、同じお弁当のまま変更できる(自分の分は数えない)', async () => {
+  addUsers();
+  db.raw.exec(`UPDATE menu_items SET daily_limit = 1 WHERE id = 1`);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  // 本人の画面では「残り1(=自分の分)」に見え、ポイントの使い方を変えるなどの再注文もできる
+  assert.equal((await dayMenu(db, { id: 2 }, '2027-01-07', s)).items.find((i) => i.id === 1).remaining, 1);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  // ほかの人には売り切れ
+  await assert.rejects(placeOrder(db, { id: 3 }, '2027-01-07', 1, s), /売り切れ/);
+});
+
+test('売り切れ:取り消しがあれば、また注文できる', async () => {
+  addUsers();
+  db.raw.exec(`UPDATE menu_items SET daily_limit = 1 WHERE id = 1`);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  await cancelOrder(db, { id: 2 }, '2027-01-07', s);
+  await placeOrder(db, { id: 3 }, '2027-01-07', 1, s);
+  assert.equal((await db.prepare(`SELECT user_id FROM orders WHERE menu_item_id = 1`).first()).user_id, 3);
+});
+
+test('お店全体の上限:お弁当の種類をまたいで合計で数える', async () => {
+  addUsers();
+  // まつえ弁当(id 1)は「日替わり弁当」だけだが、焼き魚弁当(id 3)を同じお店に移して試す
+  db.raw.exec(`UPDATE menu_items SET shop_id = 1 WHERE id = 3; UPDATE shops SET daily_limit = 2 WHERE id = 1`);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  await placeOrder(db, { id: 3 }, '2027-01-07', 3, s);
+  const m = await dayMenu(db, user, '2027-01-07', s);
+  assert.deepEqual(m.items.map((i) => i.remaining), [0, 0]);
+  await assert.rejects(placeOrder(db, user, '2027-01-07', 1, s), /売り切れ/);
+  // 別の日は関係ない
+  await placeOrder(db, user, '2027-01-08', 1, s);
+});
+
+test('上限0は「この日は作らない」(すぐ売り切れ)', async () => {
+  db.raw.exec(`UPDATE menu_items SET daily_limit = 0 WHERE id = 1`);
+  assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).sold_out, true);
+  await assert.rejects(placeOrder(db, user, '2027-01-07', 1, s), /売り切れ/);
+});

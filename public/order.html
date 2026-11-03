@@ -31,6 +31,10 @@
 
     document.getElementById('logout').onclick = logout;
 
+    /** 残り○食の表示(上限がないお弁当は何も出さない。自分が注文中のものは出さない) */
+    const stockLabel = (it, mine) =>
+      it.remaining === null || mine ? '' : it.sold_out ? '<div class="stock out">売り切れ</div>' : `<div class="stock ${it.remaining <= 3 ? 'few' : ''}">残り ${it.remaining}食</div>`;
+
     /** "2027-02-01" → "2027年2月1日" */
     const jpDate = (d) => d.replace(/^(\d+)-0?(\d+)-0?(\d+)$/, '$1年$2月$3日');
 
@@ -106,7 +110,12 @@
                 <div class="price">
                   <div class="sub">${yen(it.price)}</div>
                   <div>あなた <strong>${yen(it.employee_share)}</strong></div>
-                  ${m.open && m.current?.menu_item_id !== it.id ? `<button type="button" data-id="${it.id}" data-name="${esc(it.name)}" style="margin-top:4px;padding:6px 14px">${m.current ? '変更' : '注文'}</button>` : ''}
+                  ${stockLabel(it, m.current?.menu_item_id === it.id)}
+                  ${m.open && m.current?.menu_item_id !== it.id
+                    ? it.sold_out
+                      ? `<button type="button" disabled style="margin-top:4px;padding:6px 14px">売り切れ</button>`
+                      : `<button type="button" data-id="${it.id}" data-name="${esc(it.name)}" style="margin-top:4px;padding:6px 14px">${m.current ? '変更' : '注文'}</button>`
+                    : ''}
                 </div>
               </div>`
             )

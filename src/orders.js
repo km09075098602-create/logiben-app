@@ -63,7 +63,7 @@ export async function dayMenu(db, user, date, s) {
   const orders = await monthOrders(db, user.id, date.slice(0, 7));
   const { results: items } = await db
     .prepare(
-      `SELECT m.id, m.name, m.description, m.price, s.id AS shop_id, s.name AS shop_name
+      `SELECT m.id, m.name, m.description, m.price, m.daily_limit, s.id AS shop_id, s.name AS shop_name, s.daily_limit AS shop_limit
        FROM menu_items m JOIN shops s ON s.id = m.shop_id
        WHERE m.active = 1 AND s.active = 1 AND m.kind = 'bento'
          AND s.id NOT IN (SELECT shop_id FROM closed_days WHERE date = ? AND shop_id IS NOT NULL) -- その日休みのお店は出さない
@@ -76,6 +76,8 @@ export async function dayMenu(db, user, date, s) {
     .bind(user.id, date)
     .first();
   const allocated = allocateMonth(orders, s).orders.find((o) => current && o.id === current.id);
+  // 残り何食か(自分の注文は数えない:自分がお弁当を変えるときに、自分の分で売り切れにならないように)
+  const stock = await stockOn(db, date, user.id);
   // この日に使えるポイント(この日の注文で使っているポイントは、戻して数える)
   const points = await pointsOf(db, user.id, s, { date, kind: 'bento' });
   const { results: closedShops } = await db
@@ -92,9 +94,36 @@ export async function dayMenu(db, user, date, s) {
     points,
     items: items.map((it) => {
       const p = previewShare(orders, date, it.price, s);
-      return { ...it, company_share: p.company_share, employee_share: p.employee_share };
+      const remaining = remainingOf(it, stock);
+      return { ...it, company_share: p.company_share, employee_share: p.employee_share, remaining, sold_out: remaining !== null && remaining <= 0 };
     }),
   };
+}
+
+/** その日の注文数(お弁当ごと・お店ごと)。exceptUserId の注文は数えない */
+async function stockOn(db, date, exceptUserId) {
+  const { results } = await db
+    .prepare(`SELECT menu_item_id, shop_id, COUNT(*) AS n FROM orders WHERE delivery_date = ? AND kind = 'bento' AND user_id <> ? GROUP BY menu_item_id, shop_id`)
+    .bind(date, exceptUserId)
+    .all();
+  const byItem = new Map();
+  const byShop = new Map();
+  for (const r of results) {
+    byItem.set(r.menu_item_id, (byItem.get(r.menu_item_id) || 0) + r.n);
+    byShop.set(r.shop_id, (byShop.get(r.shop_id) || 0) + r.n);
+  }
+  return { byItem, byShop };
+}
+
+/**
+ * 残り何食か。お弁当ごとの上限と、お店全体の上限の少ない方。どちらもなければ null(制限なし)
+ * @param {{id:number, shop_id:number, daily_limit:number|null, shop_limit:number|null}} item
+ */
+export function remainingOf(item, stock) {
+  const left = [];
+  if (item.daily_limit !== null && item.daily_limit !== undefined) left.push(item.daily_limit - (stock.byItem.get(item.id) || 0));
+  if (item.shop_limit !== null && item.shop_limit !== undefined) left.push(item.shop_limit - (stock.byShop.get(item.shop_id) || 0));
+  return left.length ? Math.max(0, Math.min(...left)) : null;
 }
 
 /**
@@ -106,7 +135,7 @@ export async function placeOrder(db, user, date, menuItemId, s, channel = 'web',
   if (isDate(date) && closedReason(date, s)) throw new InputError(`この日はお休みです(${closedReason(date, s)})`);
   if (!isDate(date) || !isOrderOpen(date, s)) throw new InputError('この日の注文は締め切られています');
   const item = await db
-    .prepare(`SELECT m.* FROM menu_items m JOIN shops s ON s.id = m.shop_id WHERE m.id = ? AND m.active = 1 AND s.active = 1 AND m.kind = 'bento'`)
+    .prepare(`SELECT m.*, s.daily_limit AS shop_limit FROM menu_items m JOIN shops s ON s.id = m.shop_id WHERE m.id = ? AND m.active = 1 AND s.active = 1 AND m.kind = 'bento'`)
     .bind(Number(menuItemId))
     .first();
   if (!item) throw new InputError('このお弁当は選べません');
@@ -115,17 +144,22 @@ export async function placeOrder(db, user, date, menuItemId, s, channel = 'web',
   if (await lunchOn(db, user.id, date)) throw new InputError('この日はだるまランチを利用済みです');
   // ポイント:この日の注文で使っていた分は戻してから数え直す
   const pointsUsed = usePoints ? usablePoints((await pointsOf(db, user.id, s, { date, kind: 'bento' })).balance, item.price, s) : 0;
-  await db
+  // 「残りがあれば注文する」を1回の命令で行う(残り1食に2人が同時に注文しても、片方だけが通る)
+  // 数えるのは自分以外の注文(自分がお弁当を変えるときは、自分の今の注文は数えない)
+  const r = await db
     .prepare(
       `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, channel, tax_rate, points_used, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?10, ?10)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10
+       WHERE (?11 IS NULL OR (SELECT COUNT(*) FROM orders WHERE menu_item_id = ?3 AND delivery_date = ?2 AND kind = 'bento' AND user_id <> ?1) < ?11)
+         AND (?12 IS NULL OR (SELECT COUNT(*) FROM orders WHERE shop_id = ?4 AND delivery_date = ?2 AND kind = 'bento' AND user_id <> ?1) < ?12)
        ON CONFLICT (user_id, delivery_date, kind) DO UPDATE SET
          menu_item_id = excluded.menu_item_id, shop_id = excluded.shop_id,
          item_name = excluded.item_name, price = excluded.price, channel = excluded.channel,
          points_used = excluded.points_used, updated_at = excluded.updated_at`
     )
-    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent, pointsUsed, nowUtc())
+    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent, pointsUsed, nowUtc(), item.daily_limit ?? null, item.shop_limit ?? null)
     .run();
+  if (!r.meta.changes) throw new InputError(`申し訳ありません。「${item.name}」はこの日売り切れです。ほかのお弁当をお選びください`);
   const month = allocateMonth(await monthOrders(db, user.id, date.slice(0, 7)), s);
   const mine = month.orders.find((o) => o.delivery_date === date && o.kind === 'bento');
   return { item, order: mine, month };

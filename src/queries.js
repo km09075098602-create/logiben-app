@@ -10,7 +10,7 @@
 export async function ordersBetween(db, from, to, { companyId = null, shopId = null, kind = null } = {}) {
   const { results } = await db
     .prepare(
-      `SELECT o.id, o.delivery_date, o.price, o.item_name, o.channel, o.updated_at, o.created_at, o.kind, o.tax_rate, o.points_used,
+      `SELECT o.id, o.delivery_date, o.price, o.item_name, o.menu_item_id, o.channel, o.updated_at, o.created_at, o.kind, o.tax_rate, o.points_used,
               o.user_id, u.login_id, u.name AS user_name, u.department,
               co.id AS company_id, co.code AS company_code, co.name AS company_name,
               s.id AS shop_id, s.name AS shop_name
@@ -36,7 +36,7 @@ export async function dayOrders(db, date, { shopId = null } = {}) {
     const shop = shops.get(o.shop_id);
     shop.count++;
     shop.amount += o.price;
-    if (!shop.items.has(o.item_name)) shop.items.set(o.item_name, { item_name: o.item_name, price: o.price, count: 0 });
+    if (!shop.items.has(o.item_name)) shop.items.set(o.item_name, { item_name: o.item_name, menu_item_id: o.menu_item_id, price: o.price, count: 0 });
     shop.items.get(o.item_name).count++;
   }
   return {

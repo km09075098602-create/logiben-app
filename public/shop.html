@@ -39,6 +39,12 @@
     <!-- ===== メニュー ===== -->
     <section id="tab-menu" hidden>
       <p class="sub">「お弁当」は会社へ配達するメニュー、「だるまランチ」はお店で食べるメニューです。値段は税込みで入力してください(だるまランチは店内飲食の税率10%)。値段を変えても、すでに入っている注文の値段は変わりません。「販売中」のチェックを外すと、社員の注文画面に出なくなります。</p>
+      <form class="card row" id="shop-limit" style="align-items:end">
+        <div><label for="shop-limit-input">お店全体で1日に作れるお弁当の合計(空欄=制限なし)</label>
+          <input id="shop-limit-input" type="number" min="0" placeholder="例:50"></div>
+        <div style="flex:0 0 auto"><button type="submit">保存</button></div>
+      </form>
+      <p class="sub">メニューごとの「1日の上限」も決められます(空欄=制限なし)。上限に達すると、社員の画面で「売り切れ」になります。両方決めたときは、少ない方で止まります。</p>
       <div class="card">
         <div class="table-wrap"><table id="menu"></table></div>
         <form class="row" id="add-item" style="margin-top:8px">
@@ -46,6 +52,7 @@
           <div><input name="name" placeholder="メニューの名前" required></div>
           <div><input name="description" placeholder="説明(なくても可)"></div>
           <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
+          <div style="flex:0 1 120px"><input name="daily_limit" type="number" min="0" placeholder="1日の上限"></div>
           <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
         </form>
       </div>
@@ -134,8 +141,8 @@
           <h3>お弁当ごとの数</h3>
           <table class="d-list">
             <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
-            ${r.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num"><b>${i.count}</b></td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
-            <tr class="total"><td colspan="2">合計</td><td class="num">${r.total}</td><td class="num">${yen(r.amount)}</td></tr>
+            ${r.items.map((i) => `<tr><td>${esc(i.item_name)}${i.daily_limit !== null && i.daily_limit !== undefined ? ` <span class="sub">(上限 ${i.daily_limit}食${i.count >= i.daily_limit ? '・売り切れ' : ''})</span>` : ''}</td><td class="num">${yen(i.price)}</td><td class="num"><b>${i.count}</b></td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
+            <tr class="total"><td colspan="2">合計${r.shop_limit !== null ? ` <span class="sub">(お店全体の上限 ${r.shop_limit}食${r.total >= r.shop_limit ? '・売り切れ' : ''})</span>` : ''}</td><td class="num">${r.total}</td><td class="num">${yen(r.amount)}</td></tr>
           </table>
           <h3>お届け先ごとの中身</h3>
           ${[...groups].map(([key, list]) => {
@@ -180,11 +187,13 @@
     const menuRow = (i) => `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
       <td>${kindBadge(i.kind)} ${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
       <td class="num">${yen(i.price)}</td>
+      <td class="num">${i.kind === 'lunch' ? '<span class="sub">-</span>' : i.daily_limit === null ? '<span class="sub">なし</span>' : `${i.daily_limit}食`}</td>
       <td class="num"><button type="button" class="secondary small" data-act="edit">編集</button></td></tr>`;
     const menuEditRow = (i) => `<tr data-item="${i.id}" class="editing">
       <td>${kindSelect(i.kind)}<input name="name" value="${esc(i.name)}"></td>
       <td><input name="description" value="${esc(i.description || '')}"></td>
       <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
+      <td><input name="daily_limit" type="number" min="0" value="${i.daily_limit ?? ''}" placeholder="なし" style="width:80px"></td>
       <td class="num" style="white-space:nowrap">
         <label class="check"><input type="checkbox" name="active" ${i.active ? 'checked' : ''}> 販売中</label>
         <button type="button" class="small" data-act="save">保存</button>
@@ -192,9 +201,15 @@
 
     async function loadMenu() {
       items = await api('/api/shop/menu');
-      $('menu').innerHTML = '<tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>' +
-        (items.map(menuRow).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>');
+      $('menu').innerHTML = '<tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th class="num">1日の上限</th><th></th></tr>' +
+        (items.map(menuRow).join('') || '<tr><td colspan="5" class="sub">まだメニューがありません</td></tr>');
+      const lim = await api('/api/shop/limit');
+      $('shop-limit-input').value = lim.daily_limit ?? '';
     }
+    $('shop-limit').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (await run(() => api('/api/shop/limit', { method: 'PUT', body: { daily_limit: $('shop-limit-input').value } }), '保存しました')) loadMenu();
+    });
     $('menu').addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
@@ -204,7 +219,7 @@
       if (btn.dataset.act === 'cancel') tr.outerHTML = menuRow(item);
       if (btn.dataset.act === 'save') {
         const v = (n) => tr.querySelector(`[name=${n}]`);
-        const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+        const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, daily_limit: v('daily_limit').value, active: v('active').checked };
         if (await run(() => api(`/api/shop/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadMenu();
       }
     });

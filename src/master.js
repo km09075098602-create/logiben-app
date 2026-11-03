@@ -51,6 +51,9 @@ export const menuFields = (b) => [
   b.kind === 'lunch' ? 'lunch' : 'bento', // bento=お弁当 / lunch=だるまランチ(お店で食べる)
 ];
 
+/** 1日に作れる数(空欄=制限なし → null) */
+export const limitOf = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : int(v, '1日に作れる数', { min: 0, max: 10000 }));
+
 /** 社員1人分の入力チェック */
 function checkEmployee(row) {
   return {
@@ -76,9 +79,9 @@ export function registerMasterRoutes(app) {
 
   app.get('/api/admin/shops', async (c) => {
     const db = c.env.DB;
-    const { results: shops } = await db.prepare('SELECT id, name, active FROM shops ORDER BY active DESC, id').all();
+    const { results: shops } = await db.prepare('SELECT id, name, active, daily_limit FROM shops ORDER BY active DESC, id').all();
     const { results: items } = await db
-      .prepare('SELECT id, shop_id, name, description, price, kind, active FROM menu_items ORDER BY active DESC, kind, price, id')
+      .prepare('SELECT id, shop_id, name, description, price, kind, daily_limit, active FROM menu_items ORDER BY active DESC, kind, price, id')
       .all();
     return c.json(shops.map((s) => ({ ...s, items: items.filter((i) => i.shop_id === s.id) })));
   });
@@ -91,9 +94,11 @@ export function registerMasterRoutes(app) {
 
   app.put('/api/admin/shops/:id', async (c) => {
     const b = await body(c);
-    await c.env.DB.prepare('UPDATE shops SET name = ?, active = ? WHERE id = ?')
-      .bind(text(b.name, 'お店の名前'), flag(b.active), id(c))
-      .run();
+    const db = c.env.DB;
+    const stmts = [db.prepare('UPDATE shops SET name = ?, active = ? WHERE id = ?').bind(text(b.name, 'お店の名前'), flag(b.active), id(c))];
+    // 1日に作れる合計:送られてきたときだけ変える(名前の変更などでは消さない)
+    if ('daily_limit' in b) stmts.push(db.prepare('UPDATE shops SET daily_limit = ? WHERE id = ?').bind(limitOf(b.daily_limit), id(c)));
+    await db.batch(stmts);
     return c.json({ ok: true });
   });
 
@@ -101,8 +106,8 @@ export function registerMasterRoutes(app) {
   app.post('/api/admin/menu', async (c) => {
     const b = await body(c);
     const shopId = int(b.shop_id, 'お店', { min: 1, max: Number.MAX_SAFE_INTEGER });
-    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind) VALUES (?, ?, ?, ?, ?)')
-      .bind(shopId, ...menuFields(b))
+    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind, daily_limit) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(shopId, ...menuFields(b), limitOf(b.daily_limit))
       .run();
     return c.json({ id: r.meta.last_row_id });
   });
@@ -110,9 +115,12 @@ export function registerMasterRoutes(app) {
   // 値段を変えても、すでに入っている注文の値段は変わらない(注文時の値段を記録しているため)
   app.put('/api/admin/menu/:id', async (c) => {
     const b = await body(c);
-    await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ?')
-      .bind(...menuFields(b), flag(b.active), id(c))
-      .run();
+    const db = c.env.DB;
+    const stmts = [
+      db.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ?').bind(...menuFields(b), flag(b.active), id(c)),
+    ];
+    if ('daily_limit' in b) stmts.push(db.prepare('UPDATE menu_items SET daily_limit = ? WHERE id = ?').bind(limitOf(b.daily_limit), id(c)));
+    await db.batch(stmts);
     return c.json({ ok: true });
   });
 

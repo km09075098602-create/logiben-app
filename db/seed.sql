@@ -29,6 +29,8 @@ INSERT INTO menu_items (id, shop_id, name, description, price) VALUES (6, 3, '�
 INSERT INTO menu_items (id, shop_id, name, description, price) VALUES (7, 3, 'しじみご飯弁当', '宍道湖しじみの炊き込みご飯', 700);
 INSERT INTO menu_items (id, shop_id, name, description, price, kind) VALUES (8, 3, '日替わり定食', '小鉢2品・味噌汁つき', 900, 'lunch');
 INSERT INTO menu_items (id, shop_id, name, description, price, kind) VALUES (9, 3, 'しじみ汁定食', '宍道湖しじみ汁と焼き魚', 1000, 'lunch');
+UPDATE menu_items SET daily_limit = 3 WHERE id = 2;
+UPDATE shops SET daily_limit = 4 WHERE id = 2;
 INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (1, 'admin', NULL, 'admin', 'pbkdf2$100000$xdDNtvieq+9S2BSXLj1dXw==$tFk654wWukICe7xQb+jmoUCKqyQD0VJ0hQ+zpjhuA84=', '達磨商事 管理者', NULL);
 INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (2, 'employee', 1, '1001', 'pbkdf2$100000$DaFWlBL5I46EsnEYwFaYkQ==$+D7BgUzHXYPD+I6/sQt/nUCXe+Jnv7G24Uwj9BcZJNQ=', '山田 太郎', '営業部');
 INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (3, 'employee', 1, '1002', 'pbkdf2$100000$LoekW4H0xc2BscV0eF0cVA==$OS/0c84VYKGNpiCtjyE6FICrMt2OxuLOqonr9acr+ds=', '佐藤 花子', '営業部');

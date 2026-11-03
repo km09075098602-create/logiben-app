@@ -67,6 +67,9 @@ for (const c of companies) lines.push(`INSERT INTO companies (id, code, name) VA
 for (const s of shops) lines.push(`INSERT INTO shops (id, name) VALUES (${s.map(q).join(', ')});`);
 for (const m of menu) lines.push(`INSERT INTO menu_items (id, shop_id, name, description, price) VALUES (${m.map(q).join(', ')});`);
 for (const m of lunchMenu) lines.push(`INSERT INTO menu_items (id, shop_id, name, description, price, kind) VALUES (${m.map(q).join(', ')}, 'lunch');`);
+// 1日に作れる数の例:唐揚げ弁当は1日3食まで、キッチン大橋は1日あわせて4食まで
+lines.push(`UPDATE menu_items SET daily_limit = 3 WHERE id = 2;`);
+lines.push(`UPDATE shops SET daily_limit = 4 WHERE id = 2;`);
 for (const [id, role, cid, login, pw, name, dept] of users)
   lines.push(
     `INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (${[id, role, cid, login, hash(pw, login), name, dept].map(q).join(', ')});`

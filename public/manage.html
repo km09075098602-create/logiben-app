@@ -91,21 +91,24 @@
         .map(
           (s) => `<div class="card ${s.active ? '' : 'inactive'}" data-shop="${s.id}">
             <div class="row" style="align-items:center">
-              <div><span class="shop-name">${esc(s.name)}</span> ${badge(s.active)}</div>
+              <div><span class="shop-name">${esc(s.name)}</span> ${badge(s.active)}
+                <span class="sub">1日の合計上限:${s.daily_limit === null ? 'なし' : s.daily_limit + '食'}</span></div>
               <div style="flex:0 0 auto;display:flex;gap:6px">
                 <button type="button" class="secondary small" data-act="rename-shop">名前を変える</button>
+                <button type="button" class="secondary small" data-act="limit-shop">1日の合計上限</button>
                 <button type="button" class="secondary small" data-act="toggle-shop">${s.active ? '停止' : '再開'}</button>
               </div>
             </div>
             <div class="table-wrap"><table>
-              <tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>
-              ${s.items.map((i) => menuRow(i)).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>'}
+              <tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th class="num">1日の上限</th><th></th></tr>
+              ${s.items.map((i) => menuRow(i)).join('') || '<tr><td colspan="5" class="sub">まだメニューがありません</td></tr>'}
             </table></div>
             <form class="row add-item" style="margin-top:8px">
               <div style="flex:0 1 150px"><select name="kind"><option value="bento">お弁当</option><option value="lunch">だるまランチ</option></select></div>
               <div><input name="name" placeholder="メニューの名前" required></div>
               <div><input name="description" placeholder="説明(なくても可)"></div>
               <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
+              <div style="flex:0 1 120px"><input name="daily_limit" type="number" min="0" placeholder="1日の上限"></div>
               <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
             </form>
             <details style="margin-top:10px">
@@ -129,6 +132,7 @@
       return `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
         <td>${kindBadge(i.kind)} ${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
         <td class="num">${yen(i.price)}</td>
+        <td class="num">${i.kind === 'lunch' ? '<span class="sub">-</span>' : i.daily_limit === null ? '<span class="sub">なし</span>' : `${i.daily_limit}食`}</td>
         <td class="num"><button type="button" class="secondary small" data-act="edit-item">編集</button></td></tr>`;
     }
 
@@ -137,6 +141,7 @@
         <td>${kindSelect(i.kind)}<input name="name" value="${esc(i.name)}"></td>
         <td><input name="description" value="${esc(i.description || '')}"></td>
         <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
+        <td><input name="daily_limit" type="number" min="0" value="${i.daily_limit ?? ''}" placeholder="なし" style="width:80px"></td>
         <td class="num" style="white-space:nowrap">
           <label class="check"><input type="checkbox" name="active" ${i.active ? 'checked' : ''}> 販売中</label>
           <button type="button" class="small" data-act="save-item">保存</button>
@@ -166,6 +171,12 @@
           if (name && (await run(() => api(`/api/admin/shops/${shop.id}`, { method: 'PUT', body: { name, active: shop.active } }), '変更しました'))) loadShops();
           break;
         }
+        case 'limit-shop': {
+          const v = prompt(`「${shop.name}」で1日に作れるお弁当の合計(空欄=制限なし)`, shop.daily_limit ?? '');
+          if (v === null) return; // キャンセル
+          if (await run(() => api(`/api/admin/shops/${shop.id}`, { method: 'PUT', body: { name: shop.name, active: shop.active, daily_limit: v } }), '保存しました')) loadShops();
+          break;
+        }
         case 'toggle-shop':
           if (shop.active && !confirm(`「${shop.name}」を停止しますか?\n社員の注文画面に出なくなります(すでに入っている注文はそのまま残ります)。`)) return;
           if (await run(() => api(`/api/admin/shops/${shop.id}`, { method: 'PUT', body: { name: shop.name, active: !shop.active } }), shop.active ? '停止しました' : '再開しました')) loadShops();
@@ -178,7 +189,7 @@
           break;
         case 'save-item': {
           const v = (n) => tr.querySelector(`[name=${n}]`);
-          const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+          const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, daily_limit: v('daily_limit').value, active: v('active').checked };
           if (await run(() => api(`/api/admin/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadShops();
           break;
         }

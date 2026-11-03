@@ -226,13 +226,19 @@ const ACTIONS = {
             contents: [
               { type: 'text', text: it.name, weight: 'bold', wrap: true },
               { type: 'text', text: `${yen(it.price)} → あなた ${yen(it.employee_share)}`, size: 'sm', color: '#666666' },
+              // 残り○食(上限があるお弁当だけ)
+              ...(it.remaining !== null && !isCurrent
+                ? [{ type: 'text', text: it.sold_out ? '売り切れ' : `残り ${it.remaining}食`, size: 'xs', color: it.sold_out || it.remaining <= 3 ? RED : '#888888', weight: 'bold' }]
+                : []),
               {
                 type: 'button',
-                style: isCurrent ? 'secondary' : 'primary',
-                color: isCurrent ? undefined : RED,
+                style: isCurrent || it.sold_out ? 'secondary' : 'primary',
+                color: isCurrent || it.sold_out ? undefined : RED,
                 height: 'sm',
                 action: isCurrent
                   ? { type: 'postback', label: '✓ 注文中', data: `a=menu&d=${date}` }
+                  : it.sold_out
+                  ? { type: 'postback', label: '売り切れ', data: `a=menu&d=${date}` }
                   : { type: 'postback', label: m.current ? 'これに変更' : 'これにする', data: `a=order&d=${date}&m=${it.id}`, displayText: `${dateLabel(date)} ${it.name}` },
               },
             ],

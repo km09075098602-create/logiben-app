@@ -8,10 +8,19 @@ import { companyInvoices, shopPayments, periodOf, recentPeriods, toCsv } from '.
 import { loadSettings } from './settings.js';
 import { ordersBetween, dayOrders, dayLunches } from './queries.js';
 import { isMonth, monthRange } from './billing-routes.js';
-import { menuFields } from './master.js';
+import { menuFields, limitOf } from './master.js';
 
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 const bad = (c, message) => c.json({ error: message }, 400);
+
+/** お弁当ごとの数に「1日の上限」をつける(お店の画面で「上限 ○食」と出すため) */
+async function withLimits(db, items) {
+  if (!items.length) return items;
+  const ids = items.map((i) => i.menu_item_id);
+  const { results } = await db.prepare(`SELECT id, daily_limit FROM menu_items WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+  const limit = new Map(results.map((r) => [r.id, r.daily_limit]));
+  return items.map((i) => ({ ...i, daily_limit: limit.get(i.menu_item_id) ?? null }));
+}
 
 export function registerPortalRoutes(app, requireRole) {
   // ================= 会社の担当者 =================
@@ -85,7 +94,8 @@ export function registerPortalRoutes(app, requireRole) {
       deadline: deadline.toISOString(),
       fixed: new Date() >= deadline, // 締め切りを過ぎていれば数は確定
       total: r.total,
-      items: r.shops[0]?.items || [],
+      items: await withLimits(c.env.DB, r.shops[0]?.items || []),
+      shop_limit: (await c.env.DB.prepare('SELECT daily_limit FROM shops WHERE id = ?').bind(shopId).first())?.daily_limit ?? null,
       amount: r.shops[0]?.amount || 0,
       orders: r.orders.map((o) => ({ company_name: o.company_name, department: o.department, user_name: o.user_name, item_name: o.item_name })),
       lunches: await dayLunches(c.env.DB, date, { shopId }), // だるまランチの利用
@@ -105,7 +115,7 @@ export function registerPortalRoutes(app, requireRole) {
   /** 自分のお店のメニュー */
   app.get('/api/shop/menu', async (c) => {
     const { results } = await c.env.DB.prepare(
-      'SELECT id, name, description, price, kind, active FROM menu_items WHERE shop_id = ? ORDER BY active DESC, kind, price, id'
+      'SELECT id, name, description, price, kind, daily_limit, active FROM menu_items WHERE shop_id = ? ORDER BY active DESC, kind, price, id'
     )
       .bind(c.get('user').shop_id)
       .all();
@@ -114,8 +124,8 @@ export function registerPortalRoutes(app, requireRole) {
 
   app.post('/api/shop/menu', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind) VALUES (?, ?, ?, ?, ?)')
-      .bind(c.get('user').shop_id, ...menuFields(b))
+    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind, daily_limit) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(c.get('user').shop_id, ...menuFields(b), limitOf(b.daily_limit))
       .run();
     return c.json({ id: r.meta.last_row_id });
   });
@@ -123,10 +133,27 @@ export function registerPortalRoutes(app, requireRole) {
   // 値段を変えても、すでに入っている注文の値段は変わらない
   app.put('/api/shop/menu/:id', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    const r = await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ? AND shop_id = ?')
-      .bind(...menuFields(b), b.active === false || b.active === 0 ? 0 : 1, Number(c.req.param('id')), c.get('user').shop_id)
-      .run();
+    const db = c.env.DB;
+    const itemId = Number(c.req.param('id'));
+    const shopId = c.get('user').shop_id;
+    const stmts = [
+      db.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ? AND shop_id = ?')
+        .bind(...menuFields(b), b.active === false || b.active === 0 ? 0 : 1, itemId, shopId),
+    ];
+    if ('daily_limit' in b) stmts.push(db.prepare('UPDATE menu_items SET daily_limit = ? WHERE id = ? AND shop_id = ?').bind(limitOf(b.daily_limit), itemId, shopId));
+    const [r] = await db.batch(stmts);
     if (!r.meta.changes) return bad(c, 'メニューが見つかりません');
+    return c.json({ ok: true });
+  });
+
+  /** お店全体で1日に作れるお弁当の合計(空=制限なし) */
+  app.get('/api/shop/limit', async (c) => {
+    const r = await c.env.DB.prepare('SELECT daily_limit FROM shops WHERE id = ?').bind(c.get('user').shop_id).first();
+    return c.json({ daily_limit: r?.daily_limit ?? null });
+  });
+  app.put('/api/shop/limit', async (c) => {
+    const b = await c.req.json().catch(() => ({}));
+    await c.env.DB.prepare('UPDATE shops SET daily_limit = ? WHERE id = ?').bind(limitOf(b.daily_limit), c.get('user').shop_id).run();
     return c.json({ ok: true });
   });
 

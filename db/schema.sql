@@ -22,9 +22,10 @@ CREATE TABLE companies (
 
 -- お弁当屋さん・飲食店
 CREATE TABLE shops (
-  id     INTEGER PRIMARY KEY,
-  name   TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  active      INTEGER NOT NULL DEFAULT 1,
+  daily_limit INTEGER              -- 1日に作れるお弁当の合計(空=制限なし)
 );
 
 -- お店ごとのメニュー(値段はお店が自由に決める・税込み)
@@ -35,6 +36,7 @@ CREATE TABLE menu_items (
   description TEXT,
   price       INTEGER NOT NULL,    -- 税込み価格(円)
   kind        TEXT NOT NULL DEFAULT 'bento' CHECK (kind IN ('bento', 'lunch')), -- bento=お弁当 / lunch=だるまランチ(お店で食べる)
+  daily_limit INTEGER,             -- このお弁当を1日に作れる数(空=制限なし)
   active      INTEGER NOT NULL DEFAULT 1
 );
 
