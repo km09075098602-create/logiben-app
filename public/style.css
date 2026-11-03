@@ -121,3 +121,19 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .tabs button:last-child { border-radius: 0 8px 8px 0; }
 .tabs button.active { background: var(--main); color: #fff; border-color: var(--main); }
 @media print { header, .no-print { display: none; } body { background: #fff; } }
+
+/* 管理画面のメニュー(注文数 / 登録) */
+.nav { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.nav a { color: #fff; text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: .9rem; white-space: nowrap; }
+.nav a.active { background: rgba(255,255,255,.22); font-weight: 700; }
+
+/* 登録画面 */
+button.small { padding: 5px 10px; font-size: .82rem; }
+.badge { display: inline-block; font-size: .72rem; background: #888; color: #fff; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+.inactive { opacity: .6; }
+tr.editing td { padding: 4px 3px; }
+tr.editing input { padding: 6px 8px; }
+label.check { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 0 0; color: var(--text); }
+label.check input { width: auto; }
+textarea { font: inherit; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+code { font-size: 1rem; background: #fff; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }

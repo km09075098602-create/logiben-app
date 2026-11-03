@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 登録</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><h1>🍱 ロジ弁</h1><div class="who">管理画面(達磨商事)</div></div>
+    <nav class="nav">
+      <a href="/admin.html">注文数</a>
+      <a href="/manage.html" class="active">登録</a>
+      <button type="button" id="logout">ログアウト</button>
+    </nav>
+  </header>
+  <main>
+    <div class="tabs">
+      <button type="button" data-tab="shops" class="active">お店とメニュー</button>
+      <button type="button" data-tab="companies">会社と社員</button>
+    </div>
+
+    <!-- ===== お店とメニュー ===== -->
+    <section id="tab-shops">
+      <form class="card row" id="add-shop">
+        <div><label for="new-shop">お店を追加</label><input id="new-shop" placeholder="お店の名前" required></div>
+        <div style="flex:0 0 auto"><button type="submit">追加</button></div>
+      </form>
+      <p class="sub">メニューの値段は税込みで入力します。値段を変えても、すでに入っている注文の値段は変わりません。
+        「停止」にすると社員の注文画面に出なくなります(過去の記録は残ります)。</p>
+      <div id="shops"></div>
+    </section>
+
+    <!-- ===== 会社と社員 ===== -->
+    <section id="tab-companies" hidden>
+      <form class="card row" id="add-company">
+        <div style="flex:0 1 140px"><label for="new-company-code">会社コード</label><input id="new-company-code" placeholder="例:MT01" required></div>
+        <div><label for="new-company-name">会社名</label><input id="new-company-name" placeholder="例:松江テック株式会社" required></div>
+        <div style="flex:0 0 auto"><button type="submit">会社を追加</button></div>
+      </form>
+
+      <div class="card">
+        <label for="company-select">会社を選ぶ</label>
+        <select id="company-select"></select>
+      </div>
+      <div id="company"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { api, yen, esc, logout, toast } from '/common.js';
+
+    document.getElementById('logout').onclick = logout;
+
+    // ---------- タブ ----------
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        document.getElementById('tab-shops').hidden = b.dataset.tab !== 'shops';
+        document.getElementById('tab-companies').hidden = b.dataset.tab !== 'companies';
+      })
+    );
+
+    /** ボタンを押したときの処理(エラーは画面下に表示) */
+    async function run(fn, message) {
+      try {
+        const r = await fn();
+        if (message) toast(message);
+        return r;
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    const badge = (active) => (active ? '' : '<span class="badge">停止中</span>');
+
+    // =============== お店とメニュー ===============
+    let shops = [];
+
+    async function loadShops() {
+      shops = await api('/api/admin/shops');
+      document.getElementById('shops').innerHTML = shops
+        .map(
+          (s) => `<div class="card ${s.active ? '' : 'inactive'}" data-shop="${s.id}">
+            <div class="row" style="align-items:center">
+              <div><span class="shop-name">${esc(s.name)}</span> ${badge(s.active)}</div>
+              <div style="flex:0 0 auto;display:flex;gap:6px">
+                <button type="button" class="secondary small" data-act="rename-shop">名前を変える</button>
+                <button type="button" class="secondary small" data-act="toggle-shop">${s.active ? '停止' : '再開'}</button>
+              </div>
+            </div>
+            <div class="table-wrap"><table>
+              <tr><th>お弁当</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>
+              ${s.items.map((i) => menuRow(i)).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>'}
+            </table></div>
+            <form class="row add-item" style="margin-top:8px">
+              <div><input name="name" placeholder="お弁当の名前" required></div>
+              <div><input name="description" placeholder="説明(なくても可)"></div>
+              <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
+              <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
+            </form>
+          </div>`
+        )
+        .join('');
+    }
+
+    function menuRow(i) {
+      return `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
+        <td>${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
+        <td class="num">${yen(i.price)}</td>
+        <td class="num"><button type="button" class="secondary small" data-act="edit-item">編集</button></td></tr>`;
+    }
+
+    function menuEditRow(i) {
+      return `<tr data-item="${i.id}" class="editing">
+        <td><input name="name" value="${esc(i.name)}"></td>
+        <td><input name="description" value="${esc(i.description || '')}"></td>
+        <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
+        <td class="num" style="white-space:nowrap">
+          <label class="check"><input type="checkbox" name="active" ${i.active ? 'checked' : ''}> 販売中</label>
+          <button type="button" class="small" data-act="save-item">保存</button>
+          <button type="button" class="secondary small" data-act="cancel-item">やめる</button></td></tr>`;
+    }
+
+    const findItem = (id) => shops.flatMap((s) => s.items).find((i) => i.id === id);
+
+    document.getElementById('add-shop').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('new-shop');
+      if (await run(() => api('/api/admin/shops', { method: 'POST', body: { name: input.value } }), 'お店を追加しました')) {
+        input.value = '';
+        loadShops();
+      }
+    });
+
+    document.getElementById('shops').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const shop = shops.find((s) => s.id === Number(btn.closest('[data-shop]').dataset.shop));
+      const tr = btn.closest('tr[data-item]');
+      const item = tr && findItem(Number(tr.dataset.item));
+      switch (btn.dataset.act) {
+        case 'rename-shop': {
+          const name = prompt('新しいお店の名前', shop.name);
+          if (name && (await run(() => api(`/api/admin/shops/${shop.id}`, { method: 'PUT', body: { name, active: shop.active } }), '変更しました'))) loadShops();
+          break;
+        }
+        case 'toggle-shop':
+          if (shop.active && !confirm(`「${shop.name}」を停止しますか?\n社員の注文画面に出なくなります(すでに入っている注文はそのまま残ります)。`)) return;
+          if (await run(() => api(`/api/admin/shops/${shop.id}`, { method: 'PUT', body: { name: shop.name, active: !shop.active } }), shop.active ? '停止しました' : '再開しました')) loadShops();
+          break;
+        case 'edit-item':
+          tr.outerHTML = menuEditRow(item);
+          break;
+        case 'cancel-item':
+          tr.outerHTML = menuRow(item);
+          break;
+        case 'save-item': {
+          const v = (n) => tr.querySelector(`[name=${n}]`);
+          const body = { name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+          if (await run(() => api(`/api/admin/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadShops();
+          break;
+        }
+      }
+    });
+
+    document.getElementById('shops').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = { ...Object.fromEntries(new FormData(form)), shop_id: Number(form.closest('[data-shop]').dataset.shop) };
+      if (await run(() => api('/api/admin/menu', { method: 'POST', body }), 'メニューを追加しました')) loadShops();
+    });
+
+    // =============== 会社と社員 ===============
+    let companies = [];
+    let employees = [];
+    const select = document.getElementById('company-select');
+    const current = () => companies.find((c) => c.id === Number(select.value));
+
+    async function loadCompanies(selectId) {
+      companies = await api('/api/admin/companies');
+      select.innerHTML = companies
+        .map((c) => `<option value="${c.id}">${esc(c.code)} ${esc(c.name)}(${c.employee_count}人)${c.active ? '' : ' 【停止中】'}</option>`)
+        .join('');
+      if (selectId) select.value = selectId;
+      if (companies.length) await loadCompany();
+      else document.getElementById('company').innerHTML = '<p class="sub">まだ会社がありません。</p>';
+    }
+    select.onchange = loadCompany;
+
+    document.getElementById('add-company').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = document.getElementById('new-company-code');
+      const name = document.getElementById('new-company-name');
+      const r = await run(() => api('/api/admin/companies', { method: 'POST', body: { code: code.value, name: name.value } }), '会社を追加しました');
+      if (r) {
+        code.value = name.value = '';
+        loadCompanies(r.id);
+      }
+    });
+
+    async function loadCompany() {
+      const c = current();
+      employees = await api('/api/admin/employees?company_id=' + c.id);
+      document.getElementById('company').innerHTML = `
+        <div class="card ${c.active ? '' : 'inactive'}">
+          <div class="row" style="align-items:center">
+            <div><span class="shop-name">${esc(c.name)}</span> <span class="sub">会社コード ${esc(c.code)}</span> ${badge(c.active)}</div>
+            <div style="flex:0 0 auto;display:flex;gap:6px">
+              <button type="button" class="secondary small" data-act="edit-company">会社名・コードを変える</button>
+              <button type="button" class="secondary small" data-act="toggle-company">${c.active ? '停止' : '再開'}</button>
+            </div>
+          </div>
+        </div>
+
+        <h2>社員(${employees.filter((e) => e.active).length}人)</h2>
+        <div id="password-notice"></div>
+        <div class="card table-wrap"><table>
+          <tr><th>社員番号</th><th>名前</th><th>部署</th><th></th></tr>
+          ${employees.map(employeeRow).join('') || '<tr><td colspan="4" class="sub">まだ社員がいません</td></tr>'}
+        </table></div>
+
+        <h2>社員を1人追加</h2>
+        <form class="card row" id="add-employee">
+          <div style="flex:0 1 130px"><label>社員番号</label><input name="login_id" required></div>
+          <div><label>名前</label><input name="name" required></div>
+          <div><label>部署</label><input name="department"></div>
+          <div style="flex:0 0 auto"><button type="submit">追加</button></div>
+        </form>
+
+        <h2>社員をまとめて追加(CSV)</h2>
+        <div class="card">
+          <p class="sub" style="margin-top:0">Excel などで「社員番号, 名前, 部署」の3列の表を作り、CSV で保存したファイルを選ぶか、下の欄に貼り付けてください。初期パスワードは自動で作られます。</p>
+          <input type="file" id="csv-file" accept=".csv,text/csv,text/plain">
+          <textarea id="csv-text" rows="6" placeholder="社員番号,名前,部署&#10;1005,中村 優,営業部&#10;1006,小林 誠,開発部"></textarea>
+          <p style="margin-bottom:0"><button type="button" id="csv-import">確認して登録</button></p>
+          <div id="csv-result"></div>
+        </div>`;
+    }
+
+    function employeeRow(e) {
+      return `<tr data-emp="${e.id}" class="${e.active ? '' : 'inactive'}">
+        <td>${esc(e.login_id)}</td><td>${esc(e.name)} ${badge(e.active)}</td><td>${esc(e.department || '')}</td>
+        <td class="num" style="white-space:nowrap">
+          <button type="button" class="secondary small" data-act="edit-emp">編集</button>
+          <button type="button" class="secondary small" data-act="reset-pw">パスワード再発行</button></td></tr>`;
+    }
+
+    function employeeEditRow(e) {
+      return `<tr data-emp="${e.id}" class="editing">
+        <td><input name="login_id" value="${esc(e.login_id)}" style="width:90px"></td>
+        <td><input name="name" value="${esc(e.name)}"></td>
+        <td><input name="department" value="${esc(e.department || '')}"></td>
+        <td class="num" style="white-space:nowrap">
+          <label class="check"><input type="checkbox" name="active" ${e.active ? 'checked' : ''}> 利用中</label>
+          <button type="button" class="small" data-act="save-emp">保存</button>
+          <button type="button" class="secondary small" data-act="cancel-emp">やめる</button></td></tr>`;
+    }
+
+    /** 作ったパスワードを画面に表示する(この画面を閉じると二度と見られない) */
+    function showPasswords(list) {
+      const c = current();
+      document.getElementById('password-notice').innerHTML = `<div class="notice warn">
+        <b>ログイン情報を社員の方にお伝えください。</b>(この表示は画面を離れると消え、あとから確認できません)
+        <div class="table-wrap"><table>
+          <tr><th>会社コード</th><th>社員番号</th><th>名前</th><th>初期パスワード</th></tr>
+          ${list.map((p) => `<tr><td>${esc(c.code)}</td><td>${esc(p.login_id)}</td><td>${esc(p.name)}</td><td><code>${esc(p.password)}</code></td></tr>`).join('')}
+        </table></div>
+        <p style="margin-bottom:0"><button type="button" class="secondary small" id="download-pw">CSVで保存</button></p></div>`;
+      document.getElementById('download-pw').onclick = () => {
+        const csv = ['会社コード,社員番号,名前,部署,初期パスワード', ...list.map((p) => [c.code, p.login_id, p.name, p.department || '', p.password].join(','))].join('\r\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); // ﻿:Excelで文字化けしないため
+        a.download = `logiben_login_${c.code}.csv`; // 日本語のファイル名は一部のブラウザで化けるため英字
+        document.body.append(a);
+        a.click();
+        a.remove();
+      };
+      document.getElementById('password-notice').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const companyEl = document.getElementById('company');
+
+    companyEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const c = current();
+      const tr = btn.closest('tr[data-emp]');
+      const emp = tr && employees.find((x) => x.id === Number(tr.dataset.emp));
+      switch (btn.dataset.act) {
+        case 'edit-company': {
+          const name = prompt('会社名', c.name);
+          if (!name) return;
+          const code = prompt('会社コード(社員がログインに使います)', c.code);
+          if (!code) return;
+          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name, code, active: c.active } }), '変更しました')) loadCompanies(c.id);
+          break;
+        }
+        case 'toggle-company':
+          if (c.active && !confirm(`「${c.name}」を停止しますか?\nこの会社の社員は全員ログインできなくなります。`)) return;
+          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name: c.name, code: c.code, active: !c.active } }), c.active ? '停止しました' : '再開しました')) loadCompanies(c.id);
+          break;
+        case 'edit-emp':
+          tr.outerHTML = employeeEditRow(emp);
+          break;
+        case 'cancel-emp':
+          tr.outerHTML = employeeRow(emp);
+          break;
+        case 'save-emp': {
+          const v = (n) => tr.querySelector(`[name=${n}]`);
+          const body = { login_id: v('login_id').value, name: v('name').value, department: v('department').value, active: v('active').checked };
+          if (emp.active && !body.active && !confirm(`${emp.name} さんを停止しますか?\nログインできなくなり、明日以降の注文は取り消されます。`)) return;
+          if (await run(() => api(`/api/admin/employees/${emp.id}`, { method: 'PUT', body }), '保存しました')) loadCompanies(c.id);
+          break;
+        }
+        case 'reset-pw': {
+          if (!confirm(`${emp.name} さんのパスワードを作り直しますか?\n今のパスワードは使えなくなります。`)) return;
+          const r = await run(() => api(`/api/admin/employees/${emp.id}/reset-password`, { method: 'POST' }));
+          if (r) showPasswords([{ ...emp, password: r.password }]);
+          break;
+        }
+      }
+    });
+
+    companyEl.addEventListener('submit', async (e) => {
+      if (e.target.id !== 'add-employee') return;
+      e.preventDefault();
+      const c = current();
+      const body = { ...Object.fromEntries(new FormData(e.target)), company_id: c.id };
+      const r = await run(() => api('/api/admin/employees', { method: 'POST', body }), '社員を追加しました');
+      if (r) {
+        await loadCompanies(c.id);
+        showPasswords([r]);
+      }
+    });
+
+    companyEl.addEventListener('change', async (e) => {
+      if (e.target.id !== 'csv-file' || !e.target.files[0]) return;
+      const buf = await e.target.files[0].arrayBuffer();
+      // Excel の CSV は Shift_JIS のことが多いので、UTF-8 で読めなければ Shift_JIS で読む
+      let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+      catch { text = new TextDecoder('shift_jis').decode(buf); }
+      document.getElementById('csv-text').value = text;
+    });
+
+    /** CSV を「社員番号,名前,部署」の行に分ける(1行目が見出しなら飛ばす) */
+    function parseCsv(csv) {
+      const rows = [];
+      csv.replace(/^﻿/, '').split(/\r?\n/).forEach((line, i) => {
+        if (!line.trim()) return;
+        const cols = line.split(/[,\t]/).map((s) => s.trim().replace(/^"(.*)"$/, '$1'));
+        if (i === 0 && /社員番号/.test(cols[0])) return;
+        rows.push({ line: i + 1, login_id: cols[0], name: cols[1], department: cols[2] || '' });
+      });
+      return rows;
+    }
+
+    companyEl.addEventListener('click', async (e) => {
+      if (e.target.id !== 'csv-import') return;
+      const c = current();
+      const out = document.getElementById('csv-result');
+      const rows = parseCsv(document.getElementById('csv-text').value);
+      if (!rows.length) return toast('CSV の中身が空です', true);
+      // 1) まず全員分をチェック(この時点ではまだ登録しない)
+      const check = await run(() => api('/api/admin/employees/bulk', { method: 'POST', body: { company_id: c.id, rows, check_only: true } }));
+      if (!check) return;
+      if (!check.ok) {
+        out.innerHTML = `<div class="notice danger">直してからもう一度お試しください(まだ1人も登録していません)<br>${check.errors.map(esc).join('<br>')}</div>`;
+        return;
+      }
+      if (!confirm(`${c.name} に ${rows.length}人 を登録します。よろしいですか?`)) return;
+      // 2) 20人ずつ登録
+      const created = [];
+      e.target.disabled = true;
+      try {
+        for (let i = 0; i < rows.length; i += 20) {
+          out.innerHTML = `<p class="sub">登録中… ${i} / ${rows.length}人</p>`;
+          const r = await api('/api/admin/employees/bulk', { method: 'POST', body: { company_id: c.id, rows: rows.slice(i, i + 20) } });
+          created.push(...r.created);
+        }
+        toast(`${created.length}人を登録しました`);
+      } catch (err) {
+        toast(`途中で止まりました(${created.length}人は登録済み):${err.message}`, true);
+      }
+      await loadCompanies(c.id);
+      if (created.length) showPasswords(created);
+    });
+
+    // ---------- はじめに ----------
+    const me = await api('/api/me');
+    if (me.role !== 'admin') location.href = '/';
+    loadShops();
+    loadCompanies();
+  </script>
+</body>
+</html>

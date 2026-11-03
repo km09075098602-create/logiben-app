@@ -3,11 +3,12 @@
 // 画面(public フォルダ)からの問い合わせに答える「API」を定義しています。
 //   /api/login …… ログイン
 //   /api/employee/… 社員用
-//   /api/admin/…    管理者用
+//   /api/admin/…    管理者用(登録画面のAPIは src/master.js)
 // =============================================================
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { verifyPassword } from './password.js';
+import { registerMasterRoutes } from './master.js';
 import {
   DEFAULT_SETTINGS,
   allocateMonth,
@@ -58,7 +59,8 @@ app.use('/api/*', async (c, next) => {
       `SELECT u.id, u.role, u.name, u.department, u.company_id, c.name AS company_name
        FROM sessions s JOIN users u ON u.id = s.user_id
        LEFT JOIN companies c ON c.id = u.company_id
-       WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1`
+       WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1
+         AND (u.company_id IS NULL OR c.active = 1)`
     )
       .bind(token)
       .first();
@@ -90,7 +92,7 @@ app.post('/api/login', async (c) => {
     user = await db
       .prepare(
         `SELECT u.* FROM users u JOIN companies c ON c.id = u.company_id
-         WHERE u.role = 'employee' AND c.code = ? AND u.login_id = ? AND u.active = 1`
+         WHERE u.role = 'employee' AND c.code = ? AND u.login_id = ? AND u.active = 1 AND c.active = 1`
       )
       .bind(String(body.company_code || '').trim().toUpperCase(), String(body.login_id || '').trim())
       .first();
@@ -280,6 +282,9 @@ app.put('/api/admin/settings', async (c) => {
   if (updates.length) await c.env.DB.batch(updates);
   return c.json({ ok: true });
 });
+
+// お店・メニュー・会社・社員の登録(src/master.js)
+registerMasterRoutes(app);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 

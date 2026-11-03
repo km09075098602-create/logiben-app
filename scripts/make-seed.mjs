@@ -1,11 +1,12 @@
 // 試作用の「仮データ」を作るスクリプト → db/seed.sql を書き出します。
 // 実行: node scripts/make-seed.mjs (npm run db:reset の中で自動実行)
-import { pbkdf2Sync, randomBytes } from 'node:crypto';
+import { pbkdf2Sync, createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { DEFAULT_SETTINGS } from '../src/rules.js';
 
-const hash = (pw) => {
-  const salt = randomBytes(16);
+// お試し用データなので、毎回同じ結果になるようにソルトを固定(本番の登録では毎回ランダム)
+const hash = (pw, login) => {
+  const salt = createHash('sha256').update('logiben-demo:' + login).digest().subarray(0, 16);
   const h = pbkdf2Sync(pw, salt, 100000, 32, 'sha256');
   return `pbkdf2$100000$${salt.toString('base64')}$${h.toString('base64')}`;
 };
@@ -63,7 +64,7 @@ for (const s of shops) lines.push(`INSERT INTO shops (id, name) VALUES (${s.map(
 for (const m of menu) lines.push(`INSERT INTO menu_items (id, shop_id, name, description, price) VALUES (${m.map(q).join(', ')});`);
 for (const [id, role, cid, login, pw, name, dept] of users)
   lines.push(
-    `INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (${[id, role, cid, login, hash(pw), name, dept].map(q).join(', ')});`
+    `INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (${[id, role, cid, login, hash(pw, login), name, dept].map(q).join(', ')});`
   );
 
 // 日付は「このSQLを実行した日(日本時間)」を基準に SQLite で計算する

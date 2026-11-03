@@ -40,6 +40,7 @@ export async function logout() {
 }
 
 export function toast(message, isError = false) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove()); // 前のお知らせは消す
   const el = document.createElement('div');
   el.className = 'toast' + (isError ? ' error' : '');
   el.textContent = message;

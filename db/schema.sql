@@ -12,8 +12,9 @@ DROP TABLE IF EXISTS settings;
 -- 契約している会社
 CREATE TABLE companies (
   id   INTEGER PRIMARY KEY,
-  code TEXT NOT NULL UNIQUE,      -- ログイン時に入力する会社コード
-  name TEXT NOT NULL
+  code   TEXT NOT NULL UNIQUE,    -- ログイン時に入力する会社コード
+  name   TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 -- 0=契約終了(社員はログインできなくなる)
 );
 
 -- お弁当屋さん・飲食店
