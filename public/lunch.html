@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 だるまランチ</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* 利用完了の画面(お店の人に見せる) */
+    .ticket { background: #fff; border: 3px solid var(--main); border-radius: 16px; padding: 18px; text-align: center; }
+    .ticket .ok { font-size: 1.5rem; font-weight: 700; color: var(--main); }
+    .ticket .shop { font-size: 1.2rem; font-weight: 700; margin-top: 6px; }
+    .ticket .t-item { font-size: 1.1rem; }
+    .ticket .who { margin-top: 10px; }
+    .ticket .clock { font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .04em; margin-top: 8px; }
+    /* 動くしるし:画面の写真(スクリーンショット)ではなく、いま開いている画面だと分かるように */
+    .pulse { width: 14px; height: 14px; border-radius: 50%; background: var(--ok); display: inline-block; vertical-align: middle;
+             animation: pulse 1s ease-in-out infinite; margin-right: 6px; }
+    @keyframes pulse { 0%, 100% { transform: scale(.6); opacity: .5 } 50% { transform: scale(1.2); opacity: 1 } }
+    @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>🍜 だるまランチ</h1><div class="who" id="who"></div></div>
+    <a class="btn secondary small" href="/order.html" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.6)">お弁当の注文へ</a>
+  </header>
+  <main id="main"></main>
+
+  <script type="module">
+    import { api, yen, esc, toast, dateLabel } from '/common.js';
+    const main = document.getElementById('main');
+    let me;
+
+    function timeOf(utc) {
+      // データベースの時刻(UTC "YYYY-MM-DD HH:MM:SS")→ 日本時間の "12:05"
+      const d = new Date(utc.replace(' ', 'T') + 'Z');
+      return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+    }
+
+    async function load() {
+      const r = await api('/api/employee/lunch');
+      if (r.used) return showTicket(r);
+      if (r.closed_reason) {
+        main.innerHTML = `<div class="notice warn">今日(${dateLabel(r.date)})は${esc(r.closed_reason)}のため、だるまランチは使えません。</div>`;
+        return;
+      }
+      if (r.bento_today) {
+        main.innerHTML = `<div class="notice warn">今日はお弁当(${esc(r.bento_today)})を注文しているため、だるまランチは使えません。</div>`;
+        return;
+      }
+      if (!r.items.length) {
+        main.innerHTML = '<p class="sub">今日だるまランチを使えるお店はありません。</p>';
+        return;
+      }
+      const byShop = new Map();
+      for (const it of r.items) {
+        if (!byShop.has(it.shop_name)) byShop.set(it.shop_name, []);
+        byShop.get(it.shop_name).push(it);
+      }
+      main.innerHTML = `
+        <div class="notice warn"><b>お店で、お店の方の前で</b>メニューを選んで「これを食べる」を押し、出てきた画面を見せてください。<br>
+          1日1回まで。押したあとは自分では取り消せません(間違えたときはお店の方に取り消してもらえます)。</div>
+        ${[...byShop].map(([shop, items]) => `<div class="card"><div class="shop-name">${esc(shop)}</div>
+          ${items.map((it) => `<div class="item">
+            <div><div class="name">${esc(it.name)}</div><div class="sub">${esc(it.description || '')}</div></div>
+            <div class="price">
+              <div class="sub">${yen(it.price)}</div>
+              <div>あなた <strong>${yen(it.employee_share)}</strong></div>
+              <button type="button" data-id="${it.id}" data-label="${esc(shop)}「${esc(it.name)}」" style="margin-top:4px;padding:6px 14px">これを食べる</button>
+            </div></div>`).join('')}
+        </div>`).join('')}`;
+      main.querySelectorAll('button[data-id]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          if (!confirm(`${b.dataset.label} でだるまランチを使います。\nお店の方の前で押していますか?(あとから自分では取り消せません)`)) return;
+          try {
+            showTicket(await api('/api/employee/lunch', { method: 'POST', body: { menu_item_id: Number(b.dataset.id) } }));
+          } catch (e) { toast(e.message, true); }
+        })
+      );
+    }
+
+    /** 利用完了の画面(お店の人に見せる) */
+    function showTicket(r) {
+      const u = r.used;
+      main.innerHTML = `
+        <div class="ticket">
+          <div class="ok">✅ だるまランチ ご利用</div>
+          <div class="shop">${esc(u.shop_name)}</div>
+          <div class="t-item">${esc(u.item_name)} ${yen(u.price)}</div>
+          <div class="sub">会社負担 ${yen(u.company_share)} ・ あなた ${yen(u.employee_share)}</div>
+          <div class="who"><b>${esc(me.company_name)}</b><br>${esc(me.department || '')} ${esc(me.name)} 様</div>
+          <div class="sub" style="margin-top:8px">${dateLabel(r.date)} ${timeOf(u.created_at)} に利用</div>
+          <div class="clock"><span class="pulse"></span><span id="clock"></span></div>
+          <div class="sub">お店の方へ:この画面がロジ弁の利用の証明です(時計が動いていることをご確認ください)</div>
+        </div>
+        <p class="sub" style="text-align:center">今日のだるまランチは利用済みです。</p>`;
+      const tick = () => {
+        const el = document.getElementById('clock');
+        if (el) el.textContent = new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo' });
+      };
+      tick();
+      clearInterval(window._clock);
+      window._clock = setInterval(tick, 1000);
+    }
+
+    me = await api('/api/me');
+    if (me.role !== 'employee') location.href = '/';
+    document.getElementById('who').textContent = `${me.company_name} ${me.name} さん`;
+    load();
+  </script>
+</body>
+</html>

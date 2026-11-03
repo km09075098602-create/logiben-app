@@ -68,3 +68,31 @@ test('税込み金額に含まれる消費税', () => {
 test('CSV:カンマや改行を含む値を正しく囲む', () => {
   assert.equal(toCsv([['a', 'b,c'], ['"x"', 1]]), '﻿a,"b,c"\r\n"""x""",1\r\n');
 });
+
+test('会社への請求:お弁当(8%)とだるまランチ(10%)を分けて出す', () => {
+  const r = companyInvoices([
+    o(1, 1, 4, 600), // お弁当:会社300
+    o(1, 1, 5, 1100, { kind: 'daruma_lunch', tax_rate: 10, item_name: '日替わり定食' }), // ランチ:会社550
+  ], S);
+  const c = r[0];
+  assert.equal(c.meals, 2);
+  assert.equal(c.meals_bento, 1);
+  assert.equal(c.meals_lunch, 1);
+  assert.equal(c.company_share_bento, 300);
+  assert.equal(c.company_share_lunch, 550);
+  assert.equal(c.company_share, 850);
+  assert.equal(c.company_share_tax, 22); // 300 × 8/108
+  assert.equal(c.company_share_lunch_tax, 50); // 550 × 10/110
+  assert.equal(c.service_fee, 300); // 2食 × 150円
+  assert.equal(c.total, 850 + 300 + 30);
+  assert.equal(c.employees[0].meals_lunch, 1);
+});
+
+test('お店への支払い:だるまランチも含めて代行料10%を引く', () => {
+  const [shop] = shopPayments([o(1, 1, 4, 600), o(2, 1, 4, 1000, { kind: 'daruma_lunch', tax_rate: 10, item_name: '定食' })], S);
+  assert.equal(shop.meals, 2);
+  assert.equal(shop.meals_lunch, 1);
+  assert.equal(shop.bento_total, 1600);
+  assert.equal(shop.payment, 1440);
+  assert.deepEqual(shop.items.map((i) => i.kind).sort(), ['bento', 'daruma_lunch']);
+});

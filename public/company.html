@@ -72,15 +72,16 @@
             </div>
             <table class="bill">
               <tr><th>内容</th><th class="num">数量</th><th class="num">金額</th></tr>
-              <tr><td>お弁当代 会社ご負担分(税込・軽減税率8%対象)</td><td class="num">${inv.meals}食</td><td class="num">${yen(inv.company_share)}</td></tr>
+              <tr><td>お弁当代 会社ご負担分(税込・軽減税率8%対象)</td><td class="num">${inv.meals_bento}食</td><td class="num">${yen(inv.company_share_bento)}</td></tr>
+          ${inv.meals_lunch ? `<tr><td>だるまランチ 会社ご負担分(税込・10%対象)</td><td class="num">${inv.meals_lunch}回</td><td class="num">${yen(inv.company_share_lunch)}</td></tr>` : ''}
               <tr><td>サービス利用料(${yen(r.service_fee)} × 食数・税抜)</td><td class="num">${inv.meals}食</td><td class="num">${yen(inv.service_fee)}</td></tr>
               <tr><td>サービス利用料の消費税(10%)</td><td></td><td class="num">${yen(inv.service_tax)}</td></tr>
               <tr class="total"><td>合計(税込)</td><td></td><td class="num">${yen(inv.total)}</td></tr>
             </table>
             <h3>社員ごとの内訳</h3>
             <table class="d-list">
-              <tr><th>部署</th><th>社員番号</th><th>名前</th><th class="num">食数</th><th class="num">お弁当代</th><th class="num">会社負担</th><th class="num">社員負担</th></tr>
-              ${inv.employees.map((e) => `<tr><td>${esc(e.department)}</td><td>${esc(e.login_id)}</td><td>${esc(e.user_name)}${e.reached_cap ? ' <span class="badge">上限到達</span>' : ''}</td><td class="num">${e.meals}</td><td class="num">${yen(e.bento_total)}</td><td class="num">${yen(e.company_share)}</td><td class="num">${yen(e.employee_share)}</td></tr>`).join('')}
+              <tr><th>部署</th><th>社員番号</th><th>名前</th><th class="num">食数</th><th class="num">お食事代</th><th class="num">会社負担</th><th class="num">社員負担</th></tr>
+              ${inv.employees.map((e) => `<tr><td>${esc(e.department)}</td><td>${esc(e.login_id)}</td><td>${esc(e.user_name)}${e.reached_cap ? ' <span class="badge">上限到達</span>' : ''}</td><td class="num">${e.meals}${e.meals_lunch ? `<br><span class="sub">うちランチ${e.meals_lunch}</span>` : ''}</td><td class="num">${yen(e.bento_total)}</td><td class="num">${yen(e.company_share)}</td><td class="num">${yen(e.employee_share)}</td></tr>`).join('')}
               <tr class="total"><td colspan="3">合計</td><td class="num">${inv.meals}</td><td class="num">${yen(inv.bento_total)}</td><td class="num">${yen(inv.company_share)}</td><td class="num">${yen(inv.employee_share)}</td></tr>
             </table>
           </div>`;
@@ -104,8 +105,8 @@
       const r = await api('/api/company/day?date=' + date);
       $('day').innerHTML = `<h3 style="margin:12px 0 6px">${dateLabel(date)}(${r.orders.length}食)</h3>
         <div class="table-wrap"><table>
-          <tr><th>部署</th><th>名前</th><th>お弁当</th><th>お店</th></tr>
-          ${r.orders.map((o) => `<tr><td>${esc(o.department || '')}</td><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td><td>${esc(o.shop_name)}</td></tr>`).join('')}
+          <tr><th>部署</th><th>名前</th><th>メニュー</th><th>お店</th></tr>
+          ${r.orders.map((o) => `<tr><td>${esc(o.department || '')}</td><td>${esc(o.user_name)}</td><td>${o.kind === 'daruma_lunch' ? '🍜 ' : ''}${esc(o.item_name)}</td><td>${esc(o.shop_name)}${o.kind === 'daruma_lunch' ? '(店内)' : ''}</td></tr>`).join('')}
         </table></div>`;
     }
 

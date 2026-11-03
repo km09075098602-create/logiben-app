@@ -33,6 +33,7 @@ CREATE TABLE menu_items (
   name        TEXT NOT NULL,
   description TEXT,
   price       INTEGER NOT NULL,    -- 税込み価格(円)
+  kind        TEXT NOT NULL DEFAULT 'bento' CHECK (kind IN ('bento', 'lunch')), -- bento=お弁当 / lunch=だるまランチ(お店で食べる)
   active      INTEGER NOT NULL DEFAULT 1
 );
 
@@ -55,7 +56,8 @@ CREATE UNIQUE INDEX users_line ON users (line_user_id) WHERE line_user_id IS NOT
 -- 注文
 -- 値段・商品名は注文した時点のものを記録(あとでメニューの値段が変わっても過去の注文は変わらない)
 -- channel:注文経路(web / 将来 line)
--- kind:種類(bento=お弁当 / 将来 daruma_lunch=だるまランチ)
+-- kind:種類(bento=お弁当 / daruma_lunch=だるまランチ=お店で食べた記録)
+-- tax_rate:消費税率(お弁当8% / だるまランチ10%)。会社負担の上限を税抜きで数えるのに使う
 CREATE TABLE orders (
   id            INTEGER PRIMARY KEY,
   user_id       INTEGER NOT NULL REFERENCES users(id),
@@ -66,6 +68,7 @@ CREATE TABLE orders (
   price         INTEGER NOT NULL,
   channel       TEXT NOT NULL DEFAULT 'web',
   kind          TEXT NOT NULL DEFAULT 'bento',
+  tax_rate      INTEGER NOT NULL DEFAULT 8,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (user_id, delivery_date, kind)

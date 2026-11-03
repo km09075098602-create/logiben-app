@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS = {
   deadline_time: '09:30', // 締め切り時刻(日本時間)
   company_cap_excl: 7500, // 会社負担の上限(1人あたり月額・税抜き)
   tax_rate_percent: 8, // お弁当の消費税率(軽減税率)
+  eatin_tax_rate_percent: 10, // だるまランチ(お店で食べる)の消費税率
   warn_percent: 80, // 上限の何%で社員に知らせるか
   company_share_percent: 50, // 会社が負担する割合
   service_fee: 150, // サービス利用料(1食あたり・会社へ請求)
@@ -20,47 +21,56 @@ export const DEFAULT_SETTINGS = {
   shop_period_anchor: '2027-01-04', // お店への支払いの「2週間の区切り」の起点日(この日から14日ずつ)
 };
 
-/** 会社負担の上限を「税込み」に直した額(例:7,500円 × 1.08 = 8,100円) */
-export function capInclTax(s) {
-  return Math.floor((s.company_cap_excl * (100 + s.tax_rate_percent)) / 100);
-}
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+const lcm = (a, b) => (a * b) / gcd(a, b);
 
 /**
- * 1か月分の注文について、会社負担と社員負担を計算する。
+ * 1か月分の利用(お弁当・だるまランチ)について、会社負担と社員負担を計算する。
  * - 値段はお店が登録した税込み価格。
  * - 1食ごとに会社が半額(1円未満は切り捨て=端数は社員負担)。
- * - 会社負担の合計が上限に達したら、それ以降は社員が全額負担。
- *   上限をまたぐ注文は「会社は残り分だけ、残りは社員」。
- * - 注文は お届け日 → 注文番号 の順に上限を消費する。
+ * - 会社負担の上限は「税抜き」で数える(お弁当は8%、だるまランチ=店内飲食は10%と税率が違うため)。
+ *   上限に達したら、それ以降は社員が全額負担。上限をまたぐ食事は「会社は残り分だけ、残りは社員」。
+ * - 日付 → 番号 の順に上限を使っていく。
  *
- * @param {Array<{id:number, delivery_date:string, price:number}>} orders
+ * @param {Array<{id:number, delivery_date:string, price:number, tax_rate?:number}>} orders
+ *   tax_rate がない注文はお弁当の税率(s.tax_rate_percent)として扱う
+ * @returns cap / used / remaining は「税抜き」の円。各注文の company_share / employee_share は実際に払う税込みの円
  */
 export function allocateMonth(orders, s) {
-  const cap = capInclTax(s);
-  const sorted = [...orders].sort(
-    (a, b) => a.delivery_date.localeCompare(b.delivery_date) || a.id - b.id
-  );
-  let used = 0;
+  const rateOf = (o) => o.tax_rate ?? s.tax_rate_percent;
+  // 端数が出ないよう、税抜き額を整数 L 倍して数える(L は 108 や 110 の最小公倍数)
+  const L = orders.reduce((acc, o) => lcm(acc, 100 + rateOf(o)), 100 + s.tax_rate_percent);
+  const capScaled = s.company_cap_excl * L;
+  const sorted = [...orders].sort((a, b) => a.delivery_date.localeCompare(b.delivery_date) || a.id - b.id);
+  let usedScaled = 0;
+  let companyTotal = 0;
   const rows = sorted.map((o) => {
+    const rate = rateOf(o);
+    const perYen = (100 * L) / (100 + rate); // 税込み1円が、税抜きで何単位か
     const share = Math.floor((o.price * s.company_share_percent) / 100);
-    const company = Math.max(0, Math.min(share, cap - used));
-    used += company;
+    const room = Math.floor((capScaled - usedScaled) / perYen); // 上限の残りで出せる税込み額
+    const company = Math.max(0, Math.min(share, room));
+    usedScaled += company * perYen;
+    companyTotal += company;
     return { ...o, company_share: company, employee_share: o.price - company };
   });
+  const used = Math.floor(usedScaled / L);
+  const reached = capScaled - usedScaled < L; // 残りが税抜き1円未満
   return {
     orders: rows,
-    cap,
-    used,
-    remaining: cap - used,
-    warn: used >= (cap * s.warn_percent) / 100 && used < cap,
-    reached: used >= cap,
+    cap: s.company_cap_excl, // 上限(税抜き)
+    used, // 使った額(税抜き)
+    remaining: Math.max(0, s.company_cap_excl - used), // 残り(税抜き)
+    company_total: companyTotal, // 会社負担の合計(税込み・実際の金額)
+    warn: !reached && usedScaled * 100 >= capScaled * s.warn_percent,
+    reached,
   };
 }
 
-/** 「その日に、この値段のお弁当を頼んだら自分はいくら払うか」の見込み */
-export function previewShare(monthOrders, date, price, s) {
+/** 「その日に、この値段の食事をしたら自分はいくら払うか」の見込み */
+export function previewShare(monthOrders, date, price, s, taxRate = s.tax_rate_percent) {
   const others = monthOrders.filter((o) => o.delivery_date !== date);
-  const candidate = { id: Number.MAX_SAFE_INTEGER, delivery_date: date, price };
+  const candidate = { id: Number.MAX_SAFE_INTEGER, delivery_date: date, price, tax_rate: taxRate };
   const r = allocateMonth([...others, candidate], s);
   return r.orders.find((o) => o.id === candidate.id);
 }

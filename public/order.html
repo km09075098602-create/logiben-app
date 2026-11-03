@@ -36,23 +36,25 @@
       const pct = Math.min(100, Math.round((s.used / s.cap) * 100));
       let notice = '';
       if (s.reached) {
-        notice = `<div class="notice danger">今月の会社負担は上限に達しました。今月の残りのお弁当は全額ご自身の負担になります。</div>`;
+        notice = `<div class="notice danger">今月の会社負担は上限に達しました。今月の残りのお弁当は全額ご自身の負担になります(だるまランチも同じです)。</div>`;
       } else if (s.warn) {
-        notice = `<div class="notice warn">今月の会社負担が上限の${s.warn_percent}%を超えました(残り ${yen(s.remaining)})。上限に達すると、その月の残りは全額ご自身の負担になります。</div>`;
+        notice = `<div class="notice warn">今月の会社負担が上限の${s.warn_percent}%を超えました(残り ${yen(s.remaining)}・税抜)。上限に達すると、その月の残りは全額ご自身の負担になります。</div>`;
       }
       const myTotal = s.orders.reduce((a, o) => a + o.employee_share, 0);
+      const lunchCount = s.orders.filter((o) => o.kind === 'daruma_lunch').length;
       document.getElementById('usage').innerHTML = `
         ${notice}
         <div class="card">
-          <div class="sub">${Number(s.month.slice(5))}月の会社負担(上限 ${yen(s.cap)}・税込み)</div>
+          <div class="sub">${Number(s.month.slice(5))}月の会社負担(上限 ${yen(s.cap)}・税抜き)</div>
           <div class="meter ${s.reached ? 'full' : s.warn ? 'warn' : ''}"><div style="width:${pct}%"></div></div>
           <div style="display:flex;justify-content:space-between;font-size:.9rem">
             <span>使用 ${yen(s.used)}(${pct}%)</span><span>残り <b>${yen(s.remaining)}</b></span>
           </div>
-          <div class="sub">今月の注文 ${s.orders.length}食 ・ あなたのお支払い 合計 ${yen(myTotal)}</div>
-        </div>`;
+          <div class="sub">今月のご利用 ${s.orders.length}食${lunchCount ? `(うちだるまランチ ${lunchCount}回)` : ''} ・ あなたのお支払い 合計 ${yen(myTotal)}</div>
+        </div>
+        <a class="btn secondary" href="/lunch.html" style="display:block;text-align:center;margin-bottom:12px">🍜 だるまランチを使う(お店で食べるとき)</a>`;
       renderLine(s);
-      const ordered = new Set(s.orders.map((o) => o.delivery_date));
+      const ordered = new Set(s.orders.filter((o) => o.kind === 'bento').map((o) => o.delivery_date));
       if (!selected) selected = (s.dates.find((d) => d.open) || s.dates[0])?.date;
       document.getElementById('dates').innerHTML = s.dates
         .map(

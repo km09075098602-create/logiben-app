@@ -188,7 +188,7 @@ const ACTIONS = {
   /** 日付を選ぶ */
   async dates({ db, user, s }) {
     const sum = await employeeSummary(db, user, s);
-    const ordered = new Set(sum.orders.map((o) => o.delivery_date));
+    const ordered = new Set(sum.orders.filter((o) => o.kind === 'bento').map((o) => o.delivery_date));
     const open = sum.dates.filter((d) => d.open);
     if (!open.length) return [text('いま注文できる日はありません。', MAIN_MENU)];
     return [
@@ -259,7 +259,7 @@ const ACTIONS = {
     const lines = [
       `✅ ${dateLabel(date)} 「${r.item.name}」を注文しました`,
       `お弁当代 ${yen(r.item.price)} → あなたのお支払い ${yen(r.order.employee_share)}`,
-      `今月の会社負担の残り:${yen(r.month.remaining)}`,
+      `今月の会社負担の残り:${yen(r.month.remaining)}(税抜)`,
     ];
     if (r.month.reached) lines.push('', '⚠️ 今月の会社負担が上限に達しました。今月の残りのお弁当は全額ご自身の負担になります。');
     else if (r.month.warn) lines.push('', `⚠️ 今月の会社負担が上限の${s.warn_percent}%を超えました。上限に達すると、その月の残りは全額ご自身の負担になります。`);
@@ -297,10 +297,11 @@ const ACTIONS = {
     const sum = await employeeSummary(db, user, s);
     const pct = Math.round((sum.used / sum.cap) * 100);
     const mine = sum.orders.reduce((a, o) => a + o.employee_share, 0);
+    const lunches = sum.orders.filter((o) => o.kind === 'daruma_lunch').length;
     const lines = [
-      `${Number(sum.month.slice(5))}月のご利用(${sum.orders.length}食)`,
-      `会社負担:${yen(sum.used)} / 上限 ${yen(sum.cap)}(${pct}%)`,
-      `会社負担の残り:${yen(sum.remaining)}`,
+      `${Number(sum.month.slice(5))}月のご利用(${sum.orders.length}食${lunches ? `、うちだるまランチ ${lunches}回` : ''})`,
+      `会社負担:${yen(sum.used)} / 上限 ${yen(sum.cap)}(税抜・${pct}%)`,
+      `会社負担の残り:${yen(sum.remaining)}(税抜)`,
       `あなたのお支払い:${yen(mine)}`,
     ];
     if (sum.reached) lines.push('', '⚠️ 上限に達しています。今月の残りは全額ご自身の負担です。');
@@ -317,7 +318,7 @@ async function upcomingOrders(db, user, s) {
   for (const m of months) {
     const sum = await employeeSummary(db, user, s, m);
     const open = new Set(sum.dates.filter((d) => d.open).map((d) => d.date));
-    for (const o of sum.orders) if (o.delivery_date >= today) out.push({ ...o, open: open.has(o.delivery_date) });
+    for (const o of sum.orders) if (o.kind === 'bento' && o.delivery_date >= today) out.push({ ...o, open: open.has(o.delivery_date) });
   }
   return out.sort((a, b) => a.delivery_date.localeCompare(b.delivery_date));
 }

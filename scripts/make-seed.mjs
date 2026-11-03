@@ -18,6 +18,7 @@ const SETTING_LABELS = {
   deadline_time: '締め切り時刻(日本時間)',
   company_cap_excl: '会社負担の上限(1人・月・税抜き 円)',
   tax_rate_percent: 'お弁当の消費税率(%)',
+  eatin_tax_rate_percent: 'だるまランチ(お店で食べる)の消費税率(%)',
   warn_percent: '上限の何%で社員に知らせるか(%)',
   company_share_percent: '会社が負担する割合(%)',
   service_fee: 'サービス利用料(1食 円)',
@@ -44,6 +45,11 @@ const menu = [
   [5, 2, 'ヘルシー野菜弁当', '野菜たっぷり・500kcal以下', 620],
   [6, 3, '焼き魚弁当', '旬の焼き魚と小鉢', 750],
   [7, 3, 'しじみご飯弁当', '宍道湖しじみの炊き込みご飯', 700],
+];
+// だるまランチ(お店で食べる)のメニュー [id, shop_id, 名前, 説明, 税込み価格]
+const lunchMenu = [
+  [8, 3, '日替わり定食', '小鉢2品・味噌汁つき', 900],
+  [9, 3, 'しじみ汁定食', '宍道湖しじみ汁と焼き魚', 1000],
 ];
 // [id, 役割, 会社id, ログインID, パスワード, 名前, 部署]
 const users = [
@@ -72,6 +78,7 @@ Object.entries(DEFAULT_SETTINGS).forEach(([k, v], i) =>
 for (const c of companies) lines.push(`INSERT INTO companies (id, code, name) VALUES (${c.map(q).join(', ')});`);
 for (const s of shops) lines.push(`INSERT INTO shops (id, name) VALUES (${s.map(q).join(', ')});`);
 for (const m of menu) lines.push(`INSERT INTO menu_items (id, shop_id, name, description, price) VALUES (${m.map(q).join(', ')});`);
+for (const m of lunchMenu) lines.push(`INSERT INTO menu_items (id, shop_id, name, description, price, kind) VALUES (${m.map(q).join(', ')}, 'lunch');`);
 for (const [id, role, cid, login, pw, name, dept] of users)
   lines.push(
     `INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (${[id, role, cid, login, hash(pw, login), name, dept].map(q).join(', ')});`
@@ -99,6 +106,15 @@ for (let day = 0; day <= 14; day++) {
     if ((uid + day) % 3 === 0) continue; // 適当に間引く
     lines.push(orderSql(uid, menu[(uid * 3 + day) % menu.length], `${jst}, '+${day} days')`));
   }
+}
+
+// だるまランチの利用の例:何人かが、ここ数日のうちにお店で食べた(その日にお弁当を頼んでいない人だけ)
+for (const [uid, daysAgo, item] of [[4, 1, lunchMenu[0]], [6, 1, lunchMenu[1]], [7, 2, lunchMenu[0]], [3, 3, lunchMenu[1]]]) {
+  lines.push(
+    `INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, kind, tax_rate, created_at) ` +
+      `SELECT ${uid}, d, ${item[0]}, ${item[1]}, ${q(item[2])}, ${item[4]}, 'daruma_lunch', 10, d || ' 03:15:00' FROM (SELECT ${jst}, '-${daysAgo} days') AS d) ` +
+      `WHERE strftime('%w', d) NOT IN ('0', '6') AND NOT EXISTS (SELECT 1 FROM orders WHERE user_id = ${uid} AND delivery_date = d);`
+  );
 }
 
 // 休業日の例:年末年始(全体)と、キッチン大橋の店休日(1週間後)

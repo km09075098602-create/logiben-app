@@ -1,12 +1,15 @@
 // お金と締め切りのルールが正しいかを自動で確かめるテスト(npm test で実行)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SETTINGS as S, capInclTax, allocateMonth, previewShare, deadlineFor, isOrderOpen, orderableDates, closedReason } from '../src/rules.js';
+import { DEFAULT_SETTINGS as S, allocateMonth, previewShare, deadlineFor, isOrderOpen, orderableDates, closedReason } from '../src/rules.js';
 
 const order = (id, day, price) => ({ id, delivery_date: `2027-01-${String(day).padStart(2, '0')}`, price });
 
-test('上限は税抜き7,500円 → 税込み8,100円', () => {
-  assert.equal(capInclTax(S), 8100);
+test('上限は税抜き7,500円(お弁当だけなら税込み8,100円分)', () => {
+  const r = allocateMonth(Array.from({ length: 30 }, (_, i) => ({ id: i + 1, delivery_date: `2027-01-${String(i + 1).padStart(2, '0')}`, price: 1000 })), S);
+  assert.equal(r.company_total, 8100);
+  assert.equal(r.used, 7500);
+  assert.equal(r.cap, 7500);
 });
 
 test('会社と社員で半分ずつ。奇数の端数は社員が負担', () => {
@@ -24,7 +27,9 @@ test('上限をまたぐ注文は会社が残りだけ負担し、その後は�
   assert.equal(r.orders[20].employee_share, 700);
   assert.equal(r.orders[21].company_share, 0);
   assert.equal(r.orders[21].employee_share, 800);
-  assert.equal(r.used, 8100);
+  assert.equal(r.company_total, 8100);
+  assert.equal(r.used, 7500);
+  assert.equal(r.remaining, 0);
   assert.equal(r.reached, true);
   assert.equal(r.warn, false);
 });
@@ -80,4 +85,25 @@ test('祝日・全体の休業日は注文できない', () => {
   assert.equal(closedReason('2026-11-07', s), '土曜日');
   const dates = orderableDates(s, now).map((d) => d.date);
   assert.ok(!dates.includes('2026-11-03') && !dates.includes('2026-11-05') && dates.includes('2026-11-04'));
+});
+
+test('だるまランチ(税率10%)とお弁当(8%)が混ざっても、上限は税抜き7,500円で数える', () => {
+  // だるまランチ1,100円(会社550円=税抜500円)×14回 = 税抜7,000円 → 残り税抜500円
+  const lunches = Array.from({ length: 14 }, (_, i) => ({ id: i + 1, delivery_date: `2027-01-${String(i + 1).padStart(2, '0')}`, price: 1100, tax_rate: 10 }));
+  const r1 = allocateMonth(lunches, S);
+  assert.equal(r1.used, 7000);
+  assert.equal(r1.remaining, 500);
+  // 次にお弁当1,200円(会社600円=税抜555.5円)→ 残り税抜500円 = 税込540円まで
+  const r2 = allocateMonth([...lunches, { id: 99, delivery_date: '2027-01-20', price: 1200 }], S);
+  const bento = r2.orders.find((o) => o.id === 99);
+  assert.equal(bento.company_share, 540);
+  assert.equal(bento.employee_share, 660);
+  assert.equal(r2.reached, true);
+  assert.equal(r2.company_total, 14 * 550 + 540);
+});
+
+test('8割のお知らせも税抜きで判定(6,000円)', () => {
+  const lunch = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, delivery_date: `2027-01-${String(i + 1).padStart(2, '0')}`, price: 1100, tax_rate: 10 }));
+  assert.equal(allocateMonth(lunch(11), S).warn, false); // 税抜5,500円
+  assert.equal(allocateMonth(lunch(12), S).warn, true); // 税抜6,000円
 });

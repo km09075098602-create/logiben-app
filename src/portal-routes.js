@@ -6,7 +6,7 @@
 import { todayJST, addDays, deadlineFor, closedReason } from './rules.js';
 import { companyInvoices, shopPayments, periodOf, recentPeriods, toCsv } from './billing.js';
 import { loadSettings } from './settings.js';
-import { ordersBetween, dayOrders } from './queries.js';
+import { ordersBetween, dayOrders, dayLunches } from './queries.js';
 import { isMonth, monthRange } from './billing-routes.js';
 import { menuFields } from './master.js';
 
@@ -48,7 +48,7 @@ export function registerPortalRoutes(app, requireRole) {
     const orders = await ordersBetween(c.env.DB, date, date, { companyId: c.get('user').company_id });
     return c.json({
       date,
-      orders: orders.map((o) => ({ department: o.department, login_id: o.login_id, user_name: o.user_name, item_name: o.item_name, shop_name: o.shop_name, price: o.price })),
+      orders: orders.map((o) => ({ kind: o.kind, department: o.department, login_id: o.login_id, user_name: o.user_name, item_name: o.item_name, shop_name: o.shop_name, price: o.price })),
     });
   });
 
@@ -59,8 +59,8 @@ export function registerPortalRoutes(app, requireRole) {
     if (!isMonth(month)) return bad(c, '月を正しく指定してください');
     const s = await loadSettings(c.env.DB);
     const [inv] = companyInvoices(await ordersBetween(c.env.DB, ...monthRange(month), { companyId: user.company_id }), s);
-    const rows = [['対象月', '部署', '社員番号', '名前', '食数', 'お弁当代合計(税込)', '会社負担', '社員負担']];
-    for (const e of inv?.employees || []) rows.push([month, e.department, e.login_id, e.user_name, e.meals, e.bento_total, e.company_share, e.employee_share]);
+    const rows = [['対象月', '部署', '社員番号', '名前', '食数', 'うちだるまランチ', 'お食事代合計(税込)', '会社負担', '社員負担']];
+    for (const e of inv?.employees || []) rows.push([month, e.department, e.login_id, e.user_name, e.meals, e.meals_lunch, e.bento_total, e.company_share, e.employee_share]);
     return c.body(toCsv(rows), 200, {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="logiben_${user.company_code}_${month}.csv"`,
@@ -88,13 +88,24 @@ export function registerPortalRoutes(app, requireRole) {
       items: r.shops[0]?.items || [],
       amount: r.shops[0]?.amount || 0,
       orders: r.orders.map((o) => ({ company_name: o.company_name, department: o.department, user_name: o.user_name, item_name: o.item_name })),
+      lunches: await dayLunches(c.env.DB, date, { shopId }), // だるまランチの利用
+      today: todayJST(),
     });
+  });
+
+  /** だるまランチの記録を取り消す(当日・自分のお店の分だけ。会計の間違いなど) */
+  app.delete('/api/shop/lunch/:id', async (c) => {
+    const r = await c.env.DB.prepare(`DELETE FROM orders WHERE id = ? AND kind = 'daruma_lunch' AND shop_id = ? AND delivery_date = ?`)
+      .bind(Number(c.req.param('id')), c.get('user').shop_id, todayJST())
+      .run();
+    if (!r.meta.changes) return bad(c, '取り消せる記録が見つかりません(当日の分だけ取り消せます)');
+    return c.json({ ok: true });
   });
 
   /** 自分のお店のメニュー */
   app.get('/api/shop/menu', async (c) => {
     const { results } = await c.env.DB.prepare(
-      'SELECT id, name, description, price, active FROM menu_items WHERE shop_id = ? ORDER BY active DESC, price, id'
+      'SELECT id, name, description, price, kind, active FROM menu_items WHERE shop_id = ? ORDER BY active DESC, kind, price, id'
     )
       .bind(c.get('user').shop_id)
       .all();
@@ -103,7 +114,7 @@ export function registerPortalRoutes(app, requireRole) {
 
   app.post('/api/shop/menu', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price) VALUES (?, ?, ?, ?)')
+    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind) VALUES (?, ?, ?, ?, ?)')
       .bind(c.get('user').shop_id, ...menuFields(b))
       .run();
     return c.json({ id: r.meta.last_row_id });
@@ -112,7 +123,7 @@ export function registerPortalRoutes(app, requireRole) {
   // 値段を変えても、すでに入っている注文の値段は変わらない
   app.put('/api/shop/menu/:id', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    const r = await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, active = ? WHERE id = ? AND shop_id = ?')
+    const r = await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ? AND shop_id = ?')
       .bind(...menuFields(b), b.active === false || b.active === 0 ? 0 : 1, Number(c.req.param('id')), c.get('user').shop_id)
       .run();
     if (!r.meta.changes) return bad(c, 'メニューが見つかりません');

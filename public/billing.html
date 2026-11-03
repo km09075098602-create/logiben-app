@@ -117,16 +117,17 @@
         </div>
         <table class="bill">
           <tr><th>内容</th><th class="num">数量</th><th class="num">金額</th></tr>
-          <tr><td>お弁当代 会社ご負担分(税込・軽減税率8%対象)</td><td class="num">${c.meals}食</td><td class="num">${yen(c.company_share)}</td></tr>
+          <tr><td>お弁当代 会社ご負担分(税込・軽減税率8%対象)</td><td class="num">${c.meals_bento}食</td><td class="num">${yen(c.company_share_bento)}</td></tr>
+          ${c.meals_lunch ? `<tr><td>だるまランチ 会社ご負担分(税込・10%対象)</td><td class="num">${c.meals_lunch}回</td><td class="num">${yen(c.company_share_lunch)}</td></tr>` : ''}
           <tr><td>サービス利用料(${yen(r.service_fee)} × 食数・税抜)</td><td class="num">${c.meals}食</td><td class="num">${yen(c.service_fee)}</td></tr>
           <tr><td>サービス利用料の消費税(10%)</td><td></td><td class="num">${yen(c.service_tax)}</td></tr>
           <tr class="total"><td>合計(税込)</td><td></td><td class="num">${yen(c.total)}</td></tr>
         </table>
-        <p class="sub">8%対象 ${yen(c.company_share)}(うち消費税 ${yen(c.company_share_tax)})/ 10%対象 ${yen(c.service_fee + c.service_tax)}(うち消費税 ${yen(c.service_tax)})</p>
+        <p class="sub">8%対象 ${yen(c.company_share_bento)}(うち消費税 ${yen(c.company_share_tax)})/ 10%対象 ${yen(c.company_share_lunch + c.service_fee + c.service_tax)}(うち消費税 ${yen(c.company_share_lunch_tax + c.service_tax)})</p>
         <h3>社員ごとの内訳</h3>
         <table class="d-list">
-          <tr><th>部署</th><th>社員番号</th><th>名前</th><th class="num">食数</th><th class="num">お弁当代</th><th class="num">会社負担</th><th class="num">社員負担</th></tr>
-          ${c.employees.map((e) => `<tr><td>${esc(e.department)}</td><td>${esc(e.login_id)}</td><td>${esc(e.user_name)}${e.reached_cap ? ' <span class="badge">上限到達</span>' : ''}</td><td class="num">${e.meals}</td><td class="num">${yen(e.bento_total)}</td><td class="num">${yen(e.company_share)}</td><td class="num">${yen(e.employee_share)}</td></tr>`).join('')}
+          <tr><th>部署</th><th>社員番号</th><th>名前</th><th class="num">食数</th><th class="num">お食事代</th><th class="num">会社負担</th><th class="num">社員負担</th></tr>
+          ${c.employees.map((e) => `<tr><td>${esc(e.department)}</td><td>${esc(e.login_id)}</td><td>${esc(e.user_name)}${e.reached_cap ? ' <span class="badge">上限到達</span>' : ''}</td><td class="num">${e.meals}${e.meals_lunch ? `<br><span class="sub">うちランチ${e.meals_lunch}</span>` : ''}</td><td class="num">${yen(e.bento_total)}</td><td class="num">${yen(e.company_share)}</td><td class="num">${yen(e.employee_share)}</td></tr>`).join('')}
           <tr class="total"><td colspan="3">合計</td><td class="num">${c.meals}</td><td class="num">${yen(c.bento_total)}</td><td class="num">${yen(c.company_share)}</td><td class="num">${yen(c.employee_share)}</td></tr>
         </table>
       </div>`;
@@ -150,7 +151,7 @@
       const sum = (k) => r.shops.reduce((a, s) => a + s[k], 0);
       $('shops').innerHTML = `${notice}
         <div class="card table-wrap no-print"><table>
-          <tr><th>お店</th><th class="num">食数</th><th class="num">お弁当代</th><th class="num">営業代行料(${r.agency_fee_percent}%)</th><th class="num">お支払い額</th></tr>
+          <tr><th>お店</th><th class="num">食数</th><th class="num">お食事代</th><th class="num">営業代行料(${r.agency_fee_percent}%)</th><th class="num">お支払い額</th></tr>
           ${r.shops.map((s) => `<tr><td><a href="#shop-${s.shop_id}">${esc(s.shop_name)}</a></td><td class="num">${s.meals}</td><td class="num">${yen(s.bento_total)}</td><td class="num">${yen(s.agency_fee)}</td><td class="num"><b>${yen(s.payment)}</b></td></tr>`).join('')}
           <tr class="total"><td>合計</td><td class="num">${sum('meals')}</td><td class="num">${yen(sum('bento_total'))}</td><td class="num">${yen(sum('agency_fee'))}</td><td class="num"><b>${yen(sum('payment'))}</b></td></tr>
         </table></div>
@@ -163,14 +164,14 @@
           </div>
           <table class="bill">
             <tr><th>内容</th><th class="num">金額</th></tr>
-            <tr><td>お弁当代 合計(税込・${s.meals}食)</td><td class="num">${yen(s.bento_total)}</td></tr>
+            <tr><td>お食事代 合計(税込・${s.meals}食${s.meals_lunch ? `、うちだるまランチ ${s.meals_lunch}回` : ''})</td><td class="num">${yen(s.bento_total)}</td></tr>
             <tr><td>営業代行料(お弁当代の${r.agency_fee_percent}%・税込、うち消費税 ${yen(s.agency_fee_tax)})</td><td class="num">− ${yen(s.agency_fee)}</td></tr>
             <tr class="total"><td>お支払い額</td><td class="num">${yen(s.payment)}</td></tr>
           </table>
           <h3>お弁当ごとの数</h3>
           <table class="d-list">
-            <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
-            ${s.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num">${i.count}</td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
+            <tr><th>メニュー</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
+            ${s.items.map((i) => `<tr><td>${i.kind === 'daruma_lunch' ? '🍜 ' : ''}${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num">${i.count}</td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
           </table>
         </div>`).join('')}`;
     }

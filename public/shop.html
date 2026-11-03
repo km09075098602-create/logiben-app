@@ -38,11 +38,12 @@
 
     <!-- ===== メニュー ===== -->
     <section id="tab-menu" hidden>
-      <p class="sub">値段は税込みで入力してください。値段を変えても、すでに入っている注文の値段は変わりません。「販売中」のチェックを外すと、社員の注文画面に出なくなります。</p>
+      <p class="sub">「お弁当」は会社へ配達するメニュー、「だるまランチ」はお店で食べるメニューです。値段は税込みで入力してください(だるまランチは店内飲食の税率10%)。値段を変えても、すでに入っている注文の値段は変わりません。「販売中」のチェックを外すと、社員の注文画面に出なくなります。</p>
       <div class="card">
         <div class="table-wrap"><table id="menu"></table></div>
         <form class="row" id="add-item" style="margin-top:8px">
-          <div><input name="name" placeholder="お弁当の名前" required></div>
+          <div style="flex:0 1 150px"><select name="kind"><option value="bento">お弁当</option><option value="lunch">だるまランチ</option></select></div>
+          <div><input name="name" placeholder="メニューの名前" required></div>
           <div><input name="description" placeholder="説明(なくても可)"></div>
           <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
           <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
@@ -110,8 +111,10 @@
         : r.fixed
         ? `<span class="badge" style="background:var(--ok)">確定</span>`
         : `<span class="badge" style="background:#e0a100">受付中</span> <span class="sub">締め切り ${deadlineLabel(r.deadline)} まで数が変わります</span>`;
+      const lunch = lunchSection(r);
       if (!r.total) {
-        $('orders').innerHTML = `<div class="card"><div class="sub">${dateLabel(r.date)}</div><p style="margin:4px 0 0">この日の注文はありません。 ${status}</p></div>`;
+        $('orders').innerHTML = `<div class="card"><div class="sub">${dateLabel(r.date)}</div><p style="margin:4px 0 0">この日のお弁当の注文はありません。 ${status}</p></div>` + lunch;
+        bindLunchCancel();
         return;
       }
       // 会社・部署ごとにまとめる
@@ -141,18 +144,45 @@
               <table class="d-list"><tr><th>名前</th><th>お弁当</th></tr>
               ${list.map((o) => `<tr><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td></tr>`).join('')}</table>`;
           }).join('')}
-        </div>`;
+        </div>` + lunch;
+      bindLunchCancel();
+    }
+
+    /** だるまランチ(お店で食べた記録)の一覧。間違いは当日だけ取り消せる */
+    function lunchSection(r) {
+      if (!r.lunches.length) return '';
+      const time = (utc) => new Date(utc.replace(' ', 'T') + 'Z').toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+      const total = r.lunches.reduce((a, l) => a + l.price, 0);
+      return `<div class="card table-wrap" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between"><span class="shop-name">🍜 だるまランチの利用</span><span><b>${r.lunches.length}回</b> ・ ${yen(total)}</span></div>
+        <table>
+          <tr><th>時刻</th><th>会社</th><th>名前</th><th>メニュー</th><th class="num">値段</th><th class="no-print"></th></tr>
+          ${r.lunches.map((l) => `<tr><td>${time(l.time)}</td><td>${esc(l.company_name)}</td><td>${esc(l.user_name)}</td><td>${esc(l.item_name)}</td><td class="num">${yen(l.price)}</td>
+            <td class="num no-print">${r.date === r.today ? `<button type="button" class="secondary small" data-lunch="${l.id}">取り消す</button>` : ''}</td></tr>`).join('')}
+        </table>
+        <p class="sub" style="margin-bottom:0">会計の間違いなどで取り消すときは、当日中に「取り消す」を押してください。</p></div>`;
+    }
+    function bindLunchCancel() {
+      document.querySelectorAll('[data-lunch]').forEach((b) =>
+        (b.onclick = async () => {
+          if (!confirm('このだるまランチの記録を取り消しますか?')) return;
+          if (await run(() => api(`/api/shop/lunch/${b.dataset.lunch}`, { method: 'DELETE' }), '取り消しました')) loadOrders();
+        })
+      );
     }
 
     // ================= メニュー =================
     let items = [];
     const badge = (active) => (active ? '' : '<span class="badge">停止中</span>');
+    // メニューの種類:bento=お弁当(配達)/ lunch=だるまランチ(お店で食べる)
+    const kindBadge = (k) => (k === 'lunch' ? '<span class="badge" style="background:#8e5a2b">だるまランチ</span>' : '<span class="badge" style="background:#5d6d7e">お弁当</span>');
+    const kindSelect = (k) => `<select name="kind" style="margin-bottom:4px"><option value="bento" ${k !== 'lunch' ? 'selected' : ''}>お弁当</option><option value="lunch" ${k === 'lunch' ? 'selected' : ''}>だるまランチ</option></select>`;
     const menuRow = (i) => `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
-      <td>${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
+      <td>${kindBadge(i.kind)} ${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
       <td class="num">${yen(i.price)}</td>
       <td class="num"><button type="button" class="secondary small" data-act="edit">編集</button></td></tr>`;
     const menuEditRow = (i) => `<tr data-item="${i.id}" class="editing">
-      <td><input name="name" value="${esc(i.name)}"></td>
+      <td>${kindSelect(i.kind)}<input name="name" value="${esc(i.name)}"></td>
       <td><input name="description" value="${esc(i.description || '')}"></td>
       <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
       <td class="num" style="white-space:nowrap">
@@ -162,7 +192,7 @@
 
     async function loadMenu() {
       items = await api('/api/shop/menu');
-      $('menu').innerHTML = '<tr><th>お弁当</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>' +
+      $('menu').innerHTML = '<tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>' +
         (items.map(menuRow).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>');
     }
     $('menu').addEventListener('click', async (e) => {
@@ -174,7 +204,7 @@
       if (btn.dataset.act === 'cancel') tr.outerHTML = menuRow(item);
       if (btn.dataset.act === 'save') {
         const v = (n) => tr.querySelector(`[name=${n}]`);
-        const body = { name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+        const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
         if (await run(() => api(`/api/shop/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadMenu();
       }
     });
@@ -211,14 +241,14 @@
         </div>
         <table class="bill">
           <tr><th>内容</th><th class="num">金額</th></tr>
-          <tr><td>お弁当代 合計(税込・${p.meals}食)</td><td class="num">${yen(p.bento_total)}</td></tr>
+          <tr><td>お食事代 合計(税込・${p.meals}食${p.meals_lunch ? `、うちだるまランチ ${p.meals_lunch}回` : ''})</td><td class="num">${yen(p.bento_total)}</td></tr>
           <tr><td>営業代行料(お弁当代の${r.agency_fee_percent}%・税込、うち消費税 ${yen(p.agency_fee_tax)})</td><td class="num">− ${yen(p.agency_fee)}</td></tr>
           <tr class="total"><td>お支払い額</td><td class="num">${yen(p.payment)}</td></tr>
         </table>
         <h3>お弁当ごとの数</h3>
         <table class="d-list">
-          <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
-          ${p.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num">${i.count}</td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
+          <tr><th>メニュー</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
+          ${p.items.map((i) => `<tr><td>${i.kind === 'daruma_lunch' ? '🍜 ' : ''}${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num">${i.count}</td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
         </table></div>`;
     }
     $('period').onchange = () => loadPayment($('period').value);

@@ -40,10 +40,12 @@ export function generatePassword(length = 8) {
 }
 
 /** メニューの入力チェック(管理者の画面とお店の画面で共通) */
+// 戻り値の順番:名前・説明・値段・種類(SQLの ? の順番と合わせる)
 export const menuFields = (b) => [
-  text(b.name, 'お弁当の名前'),
+  text(b.name, 'メニューの名前'),
   text(b.description, '説明', { required: false, max: 100 }),
   int(b.price, '値段(税込み)', { min: 1, max: 100000 }),
+  b.kind === 'lunch' ? 'lunch' : 'bento', // bento=お弁当 / lunch=だるまランチ(お店で食べる)
 ];
 
 /** 社員1人分の入力チェック */
@@ -73,7 +75,7 @@ export function registerMasterRoutes(app) {
     const db = c.env.DB;
     const { results: shops } = await db.prepare('SELECT id, name, active FROM shops ORDER BY active DESC, id').all();
     const { results: items } = await db
-      .prepare('SELECT id, shop_id, name, description, price, active FROM menu_items ORDER BY active DESC, price, id')
+      .prepare('SELECT id, shop_id, name, description, price, kind, active FROM menu_items ORDER BY active DESC, kind, price, id')
       .all();
     return c.json(shops.map((s) => ({ ...s, items: items.filter((i) => i.shop_id === s.id) })));
   });
@@ -96,7 +98,7 @@ export function registerMasterRoutes(app) {
   app.post('/api/admin/menu', async (c) => {
     const b = await body(c);
     const shopId = int(b.shop_id, 'お店', { min: 1, max: Number.MAX_SAFE_INTEGER });
-    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price) VALUES (?, ?, ?, ?)')
+    const r = await c.env.DB.prepare('INSERT INTO menu_items (shop_id, name, description, price, kind) VALUES (?, ?, ?, ?, ?)')
       .bind(shopId, ...menuFields(b))
       .run();
     return c.json({ id: r.meta.last_row_id });
@@ -105,7 +107,7 @@ export function registerMasterRoutes(app) {
   // 値段を変えても、すでに入っている注文の値段は変わらない(注文時の値段を記録しているため)
   app.put('/api/admin/menu/:id', async (c) => {
     const b = await body(c);
-    await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, active = ? WHERE id = ?')
+    await c.env.DB.prepare('UPDATE menu_items SET name = ?, description = ?, price = ?, kind = ?, active = ? WHERE id = ?')
       .bind(...menuFields(b), flag(b.active), id(c))
       .run();
     return c.json({ ok: true });

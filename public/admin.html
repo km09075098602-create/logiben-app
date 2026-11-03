@@ -90,7 +90,30 @@
         <h2>注文の中身(会社・部署順)</h2>
         <div class="card table-wrap"><table>
           <tr><th>会社</th><th>部署</th><th>名前</th><th>お弁当</th><th>お店</th></tr>${rows}
-        </table></div>` : '<p class="sub">この日の注文はありません。</p>'}`;
+        </table></div>` : '<p class="sub">この日のお弁当の注文はありません。</p>'}
+        ${lunchSection(r.lunches)}`;
+      document.querySelectorAll('[data-lunch]').forEach((b) =>
+        (b.onclick = async () => {
+          if (!confirm('このだるまランチの記録を取り消しますか?(間違いの訂正用)')) return;
+          try {
+            await api(`/api/admin/lunch/${b.dataset.lunch}`, { method: 'DELETE' });
+            toast('取り消しました');
+            loadOrders();
+          } catch (e) { toast(e.message, true); }
+        })
+      );
+    }
+
+    /** だるまランチ(お店で食べた記録)の一覧 */
+    function lunchSection(lunches) {
+      if (!lunches.length) return '';
+      const time = (utc) => new Date(utc.replace(' ', 'T') + 'Z').toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+      return `<h2>🍜 だるまランチの利用(${lunches.length}回)</h2>
+        <div class="card table-wrap"><table>
+          <tr><th>時刻</th><th>お店</th><th>会社</th><th>部署</th><th>名前</th><th>メニュー</th><th class="num">値段</th><th class="no-print"></th></tr>
+          ${lunches.map((l) => `<tr><td>${time(l.time)}</td><td>${esc(l.shop_name)}</td><td>${esc(l.company_name)}</td><td>${esc(l.department || '')}</td><td>${esc(l.user_name)}</td><td>${esc(l.item_name)}</td><td class="num">${yen(l.price)}</td>
+            <td class="num no-print"><button type="button" class="secondary small" data-lunch="${l.id}">取り消す</button></td></tr>`).join('')}
+        </table></div>`;
     }
 
     async function loadSettings() {

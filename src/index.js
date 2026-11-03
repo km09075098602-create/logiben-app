@@ -13,8 +13,8 @@ import { verifyPassword } from './password.js';
 import { registerMasterRoutes } from './master.js';
 import { registerBillingRoutes } from './billing-routes.js';
 import { loadSettings } from './settings.js';
-import { dayOrders } from './queries.js';
-import { employeeSummary, dayMenu, placeOrder, cancelOrder } from './orders.js';
+import { dayOrders, dayLunches } from './queries.js';
+import { employeeSummary, dayMenu, placeOrder, cancelOrder, lunchOptions, recordLunch } from './orders.js';
 import { registerPortalRoutes } from './portal-routes.js';
 import { registerClosedDayRoutes } from './closed-days.js';
 import { registerLineRoutes } from './line.js';
@@ -159,6 +159,19 @@ app.delete('/api/employee/orders/:date', async (c) => {
   return c.json({ ok: true });
 });
 
+/** だるまランチ:今日使えるお店とメニュー */
+app.get('/api/employee/lunch', async (c) => {
+  const s = await loadSettings(c.env.DB);
+  return c.json(await lunchOptions(c.env.DB, c.get('user'), s));
+});
+
+/** だるまランチ:利用する(お店の人に画面を見せる) */
+app.post('/api/employee/lunch', async (c) => {
+  const { menu_item_id } = await c.req.json().catch(() => ({}));
+  const s = await loadSettings(c.env.DB);
+  return c.json(await recordLunch(c.env.DB, c.get('user'), menu_item_id, s, 'web'));
+});
+
 // ---------- 管理者用 ----------
 
 app.use('/api/admin/*', requireRole('admin'));
@@ -179,7 +192,14 @@ app.get('/api/admin/orders', async (c) => {
     closed_reason: closedReason(date, s), // 土日祝・全体の休業日なら理由
     shops_closed: shopsClosed, // その日休みのお店
     ...(await dayOrders(c.env.DB, date)),
+    lunches: await dayLunches(c.env.DB, date), // だるまランチの利用
   });
+});
+
+/** だるまランチの記録を取り消す(間違いの訂正用) */
+app.delete('/api/admin/lunch/:id', async (c) => {
+  await c.env.DB.prepare(`DELETE FROM orders WHERE id = ? AND kind = 'daruma_lunch'`).bind(Number(c.req.param('id'))).run();
+  return c.json({ ok: true });
 });
 
 /** 設定の一覧 */

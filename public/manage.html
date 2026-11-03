@@ -77,6 +77,9 @@
     }
 
     const badge = (active) => (active ? '' : '<span class="badge">停止中</span>');
+    // メニューの種類:bento=お弁当(配達)/ lunch=だるまランチ(お店で食べる)
+    const kindBadge = (k) => (k === 'lunch' ? '<span class="badge" style="background:#8e5a2b">だるまランチ</span>' : '<span class="badge" style="background:#5d6d7e">お弁当</span>');
+    const kindSelect = (k) => `<select name="kind" style="margin-bottom:4px"><option value="bento" ${k !== 'lunch' ? 'selected' : ''}>お弁当</option><option value="lunch" ${k === 'lunch' ? 'selected' : ''}>だるまランチ</option></select>`;
 
     // =============== お店とメニュー ===============
     let shops = [];
@@ -94,11 +97,12 @@
               </div>
             </div>
             <div class="table-wrap"><table>
-              <tr><th>お弁当</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>
+              <tr><th>メニュー</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>
               ${s.items.map((i) => menuRow(i)).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>'}
             </table></div>
             <form class="row add-item" style="margin-top:8px">
-              <div><input name="name" placeholder="お弁当の名前" required></div>
+              <div style="flex:0 1 150px"><select name="kind"><option value="bento">お弁当</option><option value="lunch">だるまランチ</option></select></div>
+              <div><input name="name" placeholder="メニューの名前" required></div>
               <div><input name="description" placeholder="説明(なくても可)"></div>
               <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
               <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
@@ -122,14 +126,14 @@
 
     function menuRow(i) {
       return `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
-        <td>${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
+        <td>${kindBadge(i.kind)} ${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
         <td class="num">${yen(i.price)}</td>
         <td class="num"><button type="button" class="secondary small" data-act="edit-item">編集</button></td></tr>`;
     }
 
     function menuEditRow(i) {
       return `<tr data-item="${i.id}" class="editing">
-        <td><input name="name" value="${esc(i.name)}"></td>
+        <td>${kindSelect(i.kind)}<input name="name" value="${esc(i.name)}"></td>
         <td><input name="description" value="${esc(i.description || '')}"></td>
         <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
         <td class="num" style="white-space:nowrap">
@@ -173,7 +177,7 @@
           break;
         case 'save-item': {
           const v = (n) => tr.querySelector(`[name=${n}]`);
-          const body = { name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+          const body = { kind: v('kind').value, name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
           if (await run(() => api(`/api/admin/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadShops();
           break;
         }
