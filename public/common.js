@@ -8,7 +8,7 @@ export async function api(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith('/api/login')) {
     location.href = '/';
-    throw new Error('ログインしてください');
+    return new Promise(() => {}); // ログイン画面に移るまで、その後の処理は止めておく
   }
   if (!res.ok) throw new Error(data.error || '通信に失敗しました');
   return data;

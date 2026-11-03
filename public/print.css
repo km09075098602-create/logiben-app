@@ -73,3 +73,8 @@
 .page .num { text-align: right; white-space: nowrap; }
 .page { scroll-margin-top: 12px; }
 @media screen { .page { overflow-x: auto; } }  /* スマホでは明細の表を横スクロール */
+
+/* スマホでも読みやすく:名前などの一覧は折り返さず横スクロール、合計の数字は改行しない */
+.d-total { white-space: nowrap; }
+.d-head { gap: 12px; }
+@media screen { .page .d-list th, .page .d-list td { white-space: nowrap; } }

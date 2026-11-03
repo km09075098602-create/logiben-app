@@ -6,7 +6,7 @@
 import { hashPassword } from './password.js';
 
 /** 入力が正しくないときに投げるエラー(画面にそのまま表示される) */
-class InputError extends Error {}
+export class InputError extends Error {}
 
 /** 文字の入力チェック */
 function text(value, label, { required = true, max = 50 } = {}) {
@@ -38,6 +38,13 @@ export function generatePassword(length = 8) {
   const rnd = crypto.getRandomValues(new Uint8Array(length));
   return Array.from(rnd, (n) => chars[n % chars.length]).join('');
 }
+
+/** メニューの入力チェック(管理者の画面とお店の画面で共通) */
+export const menuFields = (b) => [
+  text(b.name, 'お弁当の名前'),
+  text(b.description, '説明', { required: false, max: 100 }),
+  int(b.price, '値段(税込み)', { min: 1, max: 100000 }),
+];
 
 /** 社員1人分の入力チェック */
 function checkEmployee(row) {
@@ -85,11 +92,6 @@ export function registerMasterRoutes(app) {
     return c.json({ ok: true });
   });
 
-  const menuFields = (b) => [
-    text(b.name, 'お弁当の名前'),
-    text(b.description, '説明', { required: false, max: 100 }),
-    int(b.price, '値段(税込み)', { min: 1, max: 100000 }),
-  ];
 
   app.post('/api/admin/menu', async (c) => {
     const b = await body(c);
@@ -231,17 +233,60 @@ export function registerMasterRoutes(app) {
     return c.json({ ok: true });
   });
 
-  /** パスワードを作り直す(社員が忘れたとき) */
-  app.post('/api/admin/employees/:id/reset-password', async (c) => {
+  /** パスワードを作り直す(社員・会社の担当者・お店が忘れたとき) */
+  app.post('/api/admin/users/:id/reset-password', async (c) => {
     const db = c.env.DB;
     const userId = id(c);
     const password = generatePassword();
     const r = await db
-      .prepare(`UPDATE users SET password_hash = ? WHERE id = ? AND role = 'employee'`)
+      .prepare(`UPDATE users SET password_hash = ? WHERE id = ? AND role IN ('employee', 'company', 'shop')`)
       .bind(await hashPassword(password), userId)
       .run();
-    if (!r.meta.changes) throw new InputError('社員が見つかりません');
+    if (!r.meta.changes) throw new InputError('アカウントが見つかりません');
     await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
     return c.json({ password });
+  });
+
+  // ---------- 会社の担当者・お店のログイン用アカウント ----------
+  // ?company_id=… なら会社の担当者、?shop_id=… ならお店のアカウント
+  app.get('/api/admin/accounts', async (c) => {
+    const { company_id, shop_id } = c.req.query();
+    const [role, col, val] = company_id ? ['company', 'company_id', company_id] : ['shop', 'shop_id', shop_id];
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, login_id, name, active FROM users WHERE role = ? AND ${col} = ? ORDER BY active DESC, login_id`
+    )
+      .bind(role, int(val, 'ID', { min: 1, max: Number.MAX_SAFE_INTEGER }))
+      .all();
+    return c.json(results);
+  });
+
+  app.post('/api/admin/accounts', async (c) => {
+    const b = await body(c);
+    const role = b.company_id ? 'company' : 'shop';
+    const ownerId = int(b.company_id || b.shop_id, role === 'company' ? '会社' : 'お店', { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const login_id = code(b.login_id, 'ログインID');
+    const name = text(b.name, '名前(担当者名など)');
+    const password = generatePassword();
+    await c.env.DB.prepare(
+      `INSERT INTO users (role, company_id, shop_id, login_id, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind(role, role === 'company' ? ownerId : null, role === 'shop' ? ownerId : null, login_id, await hashPassword(password), name)
+      .run();
+    return c.json({ login_id, name, password });
+  });
+
+  app.put('/api/admin/accounts/:id', async (c) => {
+    const b = await body(c);
+    const db = c.env.DB;
+    const userId = id(c);
+    const active = flag(b.active);
+    const stmts = [
+      db
+        .prepare(`UPDATE users SET login_id = ?, name = ?, active = ? WHERE id = ? AND role IN ('company', 'shop')`)
+        .bind(code(b.login_id, 'ログインID'), text(b.name, '名前(担当者名など)'), active, userId),
+    ];
+    if (!active) stmts.push(db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId));
+    await db.batch(stmts);
+    return c.json({ ok: true });
   });
 }

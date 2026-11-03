@@ -4,6 +4,7 @@
 //   /api/login …… ログイン
 //   /api/employee/… 社員用
 //   /api/admin/…    管理者用(登録画面のAPIは src/master.js)
+//   /api/company/… 会社の担当者用、/api/shop/… お店用(src/portal-routes.js)
 // =============================================================
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -11,6 +12,8 @@ import { verifyPassword } from './password.js';
 import { registerMasterRoutes } from './master.js';
 import { registerBillingRoutes } from './billing-routes.js';
 import { loadSettings } from './settings.js';
+import { dayOrders } from './queries.js';
+import { registerPortalRoutes } from './portal-routes.js';
 import {
   DEFAULT_SETTINGS,
   allocateMonth,
@@ -48,11 +51,14 @@ app.use('/api/*', async (c, next) => {
   const token = getCookie(c, 'session');
   if (token) {
     const user = await c.env.DB.prepare(
-      `SELECT u.id, u.role, u.name, u.department, u.company_id, c.name AS company_name
+      `SELECT u.id, u.role, u.name, u.department, u.company_id, c.name AS company_name, c.code AS company_code,
+              u.shop_id, sh.name AS shop_name
        FROM sessions s JOIN users u ON u.id = s.user_id
        LEFT JOIN companies c ON c.id = u.company_id
+       LEFT JOIN shops sh ON sh.id = u.shop_id
        WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1
-         AND (u.company_id IS NULL OR c.active = 1)`
+         AND (u.company_id IS NULL OR c.active = 1)
+         AND (u.shop_id IS NULL OR sh.active = 1)`
     )
       .bind(token)
       .first();
@@ -80,13 +86,24 @@ app.post('/api/login', async (c) => {
       .prepare(`SELECT * FROM users WHERE role = 'admin' AND login_id = ? AND active = 1`)
       .bind(String(body.login_id || ''))
       .first();
+  } else if (body.type === 'shop') {
+    // お店:ログインIDだけで入る
+    user = await db
+      .prepare(
+        `SELECT u.* FROM users u JOIN shops s ON s.id = u.shop_id
+         WHERE u.role = 'shop' AND u.login_id = ? AND u.active = 1 AND s.active = 1`
+      )
+      .bind(String(body.login_id || '').trim())
+      .first();
   } else {
+    // 社員・会社の担当者:会社コード+ログインID
+    const role = body.type === 'company' ? 'company' : 'employee';
     user = await db
       .prepare(
         `SELECT u.* FROM users u JOIN companies c ON c.id = u.company_id
-         WHERE u.role = 'employee' AND c.code = ? AND u.login_id = ? AND u.active = 1 AND c.active = 1`
+         WHERE u.role = ? AND c.code = ? AND u.login_id = ? AND u.active = 1 AND c.active = 1`
       )
-      .bind(String(body.company_code || '').trim().toUpperCase(), String(body.login_id || '').trim())
+      .bind(role, String(body.company_code || '').trim().toUpperCase(), String(body.login_id || '').trim())
       .first();
   }
   if (!user || !(await verifyPassword(String(body.password || ''), user.password_hash))) {
@@ -218,37 +235,8 @@ app.use('/api/admin/*', requireRole('admin'));
 app.get('/api/admin/orders', async (c) => {
   const date = c.req.query('date');
   if (!isDate(date)) return fail(c, 400, '日付が正しくありません');
-  const { results } = await c.env.DB.prepare(
-    `SELECT o.id, o.item_name, o.price, o.channel, o.updated_at,
-            s.id AS shop_id, s.name AS shop_name,
-            u.name AS user_name, u.department, co.id AS company_id, co.name AS company_name
-     FROM orders o
-     JOIN shops s ON s.id = o.shop_id
-     JOIN users u ON u.id = o.user_id
-     JOIN companies co ON co.id = u.company_id
-     WHERE o.delivery_date = ? AND o.kind = 'bento'
-     ORDER BY co.id, u.department, u.name`
-  )
-    .bind(date)
-    .all();
-
-  // お店ごと → お弁当ごとの数
-  const shops = {};
-  for (const o of results) {
-    const shop = (shops[o.shop_id] ||= { shop_name: o.shop_name, count: 0, amount: 0, items: {} });
-    shop.count++;
-    shop.amount += o.price;
-    const item = (shop.items[o.item_name] ||= { item_name: o.item_name, price: o.price, count: 0 });
-    item.count++;
-  }
   const s = await loadSettings(c.env.DB);
-  return c.json({
-    date,
-    deadline: deadlineFor(date, s).toISOString(),
-    total: results.length,
-    shops: Object.values(shops).map((x) => ({ ...x, items: Object.values(x.items) })),
-    orders: results,
-  });
+  return c.json({ date, deadline: deadlineFor(date, s).toISOString(), ...(await dayOrders(c.env.DB, date)) });
 });
 
 /** 設定の一覧 */
@@ -281,6 +269,8 @@ app.put('/api/admin/settings', async (c) => {
 registerMasterRoutes(app);
 // 請求・支払い・CSV(src/billing-routes.js)
 registerBillingRoutes(app);
+// 会社の担当者・お店の画面(src/portal-routes.js)
+registerPortalRoutes(app, requireRole);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 

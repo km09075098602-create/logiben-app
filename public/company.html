@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 ご利用状況</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/print.css">
+  <style>@page { size: A4 portrait; margin: 12mm; }</style>
+</head>
+<body>
+  <header>
+    <div><h1>🍱 ロジ弁</h1><div class="who" id="who"></div></div>
+    <button type="button" id="logout">ログアウト</button>
+  </header>
+  <main>
+    <div class="card no-print">
+      <div class="row">
+        <div><label for="month">対象月</label><select id="month"></select></div>
+        <div style="flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap">
+          <a class="btn secondary" id="csv">社員ごとの内訳(CSV)</a>
+          <button type="button" id="print">明細を印刷</button>
+        </div>
+      </div>
+    </div>
+    <div id="summary"></div>
+
+    <h2 class="no-print">日ごとの注文</h2>
+    <div class="card no-print">
+      <div class="dates" id="days"></div>
+      <div id="day"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { api, yen, esc, logout, dateLabel } from '/common.js';
+    document.getElementById('logout').onclick = logout;
+    const $ = (id) => document.getElementById(id);
+    const monthLabel = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
+
+    // 対象月:来月〜12か月前
+    const now = new Date(Date.now() + 9 * 3600 * 1000);
+    const months = [];
+    for (let i = -1; i < 12; i++) months.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7));
+    $('month').innerHTML = months.map((m, i) => `<option value="${m}" ${i === 1 ? 'selected' : ''}>${monthLabel(m)}${i === 1 ? '(今月)' : ''}</option>`).join('');
+    $('month').onchange = load;
+    $('print').onclick = () => print();
+
+
+    async function load() {
+      const month = $('month').value;
+      $('csv').href = `/api/company/employees.csv?month=${month}`;
+      const r = await api('/api/company/summary?month=' + month);
+      const inv = r.invoice;
+      const notice = r.complete ? '' : `<div class="notice warn no-print">${monthLabel(month)}はまだ終わっていないため、今日までに入っている注文(この先の予約を含む)での<b>途中経過</b>です。</div>`;
+      if (!inv) {
+        $('summary').innerHTML = notice + `<div class="card"><p class="sub" style="margin:0">${monthLabel(month)}のご利用はまだありません(ご登録の社員 ${r.employee_count}人)。</p></div>`;
+      } else {
+        const users = inv.employees.length;
+        $('summary').innerHTML = `${notice}
+          <div class="row no-print" style="margin-bottom:12px">
+            ${tile('ご請求額(税込)', yen(inv.total))}
+            ${tile('ご利用食数', `${inv.meals}食`)}
+            ${tile('ご利用の社員', `${users} / ${r.employee_count}人`)}
+            ${tile('1食あたりの会社負担', yen(Math.round((inv.company_share + inv.service_fee + inv.service_tax) / inv.meals)))}
+          </div>
+          <div class="page">
+            <div class="d-head">
+              <div><div class="sub">ロジ弁 ご利用明細 ${monthLabel(month)}分${r.complete ? '' : '(途中経過)'}</div>
+                <div class="d-company">${esc(inv.company_name)} 様</div></div>
+              <div style="text-align:right"><div class="sub">ご請求額(税込)</div><div class="d-total">${yen(inv.total)}</div></div>
+            </div>
+            <table class="bill">
+              <tr><th>内容</th><th class="num">数量</th><th class="num">金額</th></tr>
+              <tr><td>お弁当代 会社ご負担分(税込・軽減税率8%対象)</td><td class="num">${inv.meals}食</td><td class="num">${yen(inv.company_share)}</td></tr>
+              <tr><td>サービス利用料(${yen(r.service_fee)} × 食数・税抜)</td><td class="num">${inv.meals}食</td><td class="num">${yen(inv.service_fee)}</td></tr>
+              <tr><td>サービス利用料の消費税(10%)</td><td></td><td class="num">${yen(inv.service_tax)}</td></tr>
+              <tr class="total"><td>合計(税込)</td><td></td><td class="num">${yen(inv.total)}</td></tr>
+            </table>
+            <h3>社員ごとの内訳</h3>
+            <table class="d-list">
+              <tr><th>部署</th><th>社員番号</th><th>名前</th><th class="num">食数</th><th class="num">お弁当代</th><th class="num">会社負担</th><th class="num">社員負担</th></tr>
+              ${inv.employees.map((e) => `<tr><td>${esc(e.department)}</td><td>${esc(e.login_id)}</td><td>${esc(e.user_name)}${e.reached_cap ? ' <span class="badge">上限到達</span>' : ''}</td><td class="num">${e.meals}</td><td class="num">${yen(e.bento_total)}</td><td class="num">${yen(e.company_share)}</td><td class="num">${yen(e.employee_share)}</td></tr>`).join('')}
+              <tr class="total"><td colspan="3">合計</td><td class="num">${inv.meals}</td><td class="num">${yen(inv.bento_total)}</td><td class="num">${yen(inv.company_share)}</td><td class="num">${yen(inv.employee_share)}</td></tr>
+            </table>
+          </div>`;
+      }
+      // 日ごとの食数(タブ)
+      $('days').innerHTML = r.daily.length
+        ? r.daily.map((d) => `<button type="button" data-date="${d.date}">${dateLabel(d.date)}<small>${d.meals}食</small></button>`).join('')
+        : '<p class="sub" style="margin:0">この月の注文はありません。</p>';
+      document.querySelectorAll('#days button').forEach((b) => (b.onclick = () => loadDay(b.dataset.date)));
+      const today = now.toISOString().slice(0, 10);
+      const pick = r.daily.find((d) => d.date >= today) || r.daily[r.daily.length - 1];
+      if (pick) loadDay(pick.date);
+      else $('day').innerHTML = '';
+    }
+
+    const tile = (label, value) => `<div class="card" style="margin:0"><div class="sub">${label}</div><div style="font-size:1.4rem;font-weight:700">${value}</div></div>`;
+
+    async function loadDay(date) {
+
+      document.querySelectorAll('#days button').forEach((b) => b.classList.toggle('active', b.dataset.date === date));
+      const r = await api('/api/company/day?date=' + date);
+      $('day').innerHTML = `<h3 style="margin:12px 0 6px">${dateLabel(date)}(${r.orders.length}食)</h3>
+        <div class="table-wrap"><table>
+          <tr><th>部署</th><th>名前</th><th>お弁当</th><th>お店</th></tr>
+          ${r.orders.map((o) => `<tr><td>${esc(o.department || '')}</td><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td><td>${esc(o.shop_name)}</td></tr>`).join('')}
+        </table></div>`;
+    }
+
+    const me = await api('/api/me');
+    if (me.role !== 'company') location.href = '/';
+    $('who').textContent = `${me.company_name}(${me.name} 様)`;
+    load();
+  </script>
+</body>
+</html>

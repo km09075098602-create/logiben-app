@@ -54,6 +54,14 @@ const users = [
   [6, 'employee', 2, '2001', 'demo1234', '田中 健', '総務部'],
   [7, 'employee', 2, '2002', 'demo1234', '伊藤 さくら', '製造部'],
   [8, 'employee', 2, '2003', 'demo1234', '渡辺 翔', '製造部'],
+  [9, 'company', 1, 'tanto', 'demo1234', '総務課 木村', null],
+  [10, 'company', 2, 'tanto', 'demo1234', '総務課 石田', null],
+];
+// お店のログイン用アカウント [id, shop_id, ログインID, パスワード, 名前]
+const shopUsers = [
+  [11, 1, 'matsue', 'demo1234', 'まつえ弁当'],
+  [12, 2, 'ohashi', 'demo1234', 'キッチン大橋'],
+  [13, 3, 'shinji', 'demo1234', '和食処 しんじ'],
 ];
 
 const lines = ['-- 自動生成ファイル(scripts/make-seed.mjs)。直接編集しないでください。'];
@@ -66,6 +74,11 @@ for (const m of menu) lines.push(`INSERT INTO menu_items (id, shop_id, name, des
 for (const [id, role, cid, login, pw, name, dept] of users)
   lines.push(
     `INSERT INTO users (id, role, company_id, login_id, password_hash, name, department) VALUES (${[id, role, cid, login, hash(pw, login), name, dept].map(q).join(', ')});`
+  );
+
+for (const [id, shopId, login, pw, name] of shopUsers)
+  lines.push(
+    `INSERT INTO users (id, role, shop_id, login_id, password_hash, name) VALUES (${[id, 'shop', shopId, login, hash(pw, 'shop:' + login), name].map(q).join(', ')});`
   );
 
 // 日付は「このSQLを実行した日(日本時間)」を基準に SQLite で計算する

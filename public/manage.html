@@ -102,9 +102,14 @@
               <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
               <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
             </form>
+            <details style="margin-top:10px">
+              <summary class="sub">お店のログイン用アカウント(注文数・メニュー・お支払いを見る画面)</summary>
+              <div class="accounts" data-kind="shop" data-owner="${s.id}"></div>
+            </details>
           </div>`
         )
         .join('');
+      document.querySelectorAll('#shops .accounts').forEach(loadAccounts);
     }
 
     function menuRow(i) {
@@ -168,8 +173,9 @@
     });
 
     document.getElementById('shops').addEventListener('submit', async (e) => {
-      e.preventDefault();
       const form = e.target;
+      if (!form.classList.contains('add-item')) return;
+      e.preventDefault();
       const body = { ...Object.fromEntries(new FormData(form)), shop_id: Number(form.closest('[data-shop]').dataset.shop) };
       if (await run(() => api('/api/admin/menu', { method: 'POST', body }), 'メニューを追加しました')) loadShops();
     });
@@ -216,6 +222,9 @@
           </div>
         </div>
 
+        <h2>担当者のアカウント(利用状況・請求額を見る画面)</h2>
+        <div class="card"><div class="accounts" data-kind="company" data-owner="${c.id}"></div></div>
+
         <h2>社員(${employees.filter((e) => e.active).length}人)</h2>
         <div id="password-notice"></div>
         <div class="card table-wrap"><table>
@@ -239,6 +248,7 @@
           <p style="margin-bottom:0"><button type="button" id="csv-import">確認して登録</button></p>
           <div id="csv-result"></div>
         </div>`;
+      await loadAccounts(document.querySelector('#company .accounts'));
     }
 
     function employeeRow(e) {
@@ -260,27 +270,83 @@
           <button type="button" class="secondary small" data-act="cancel-emp">やめる</button></td></tr>`;
     }
 
-    /** 作ったパスワードを画面に表示する(この画面を閉じると二度と見られない) */
-    function showPasswords(list) {
-      const c = current();
-      document.getElementById('password-notice').innerHTML = `<div class="notice warn">
-        <b>ログイン情報を社員の方にお伝えください。</b>(この表示は画面を離れると消え、あとから確認できません)
+    /**
+     * 作ったパスワードを画面に表示する(この画面を閉じると二度と見られない)
+     * target:表示する場所 / code:会社コード(お店はなし) / idLabel:「社員番号」など / who:誰に伝えるか
+     */
+    function showPasswords(target, list, { code = null, idLabel = '社員番号', who = '社員の方', filename = 'logiben_login.csv' } = {}) {
+      const hasDept = list.some((p) => p.department);
+      const head = [...(code ? ['会社コード'] : []), idLabel, '名前', ...(hasDept ? ['部署'] : []), '初期パスワード'];
+      const cells = (p) => [...(code ? [code] : []), p.login_id, p.name, ...(hasDept ? [p.department || ''] : []), p.password];
+      target.innerHTML = `<div class="notice warn">
+        <b>ログイン情報を${who}にお伝えください。</b>(この表示は画面を離れると消え、あとから確認できません)
         <div class="table-wrap"><table>
-          <tr><th>会社コード</th><th>社員番号</th><th>名前</th><th>初期パスワード</th></tr>
-          ${list.map((p) => `<tr><td>${esc(c.code)}</td><td>${esc(p.login_id)}</td><td>${esc(p.name)}</td><td><code>${esc(p.password)}</code></td></tr>`).join('')}
+          <tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr>
+          ${list.map((p) => `<tr>${cells(p).map((v, i, arr) => `<td>${i === arr.length - 1 ? `<code>${esc(v)}</code>` : esc(v)}</td>`).join('')}</tr>`).join('')}
         </table></div>
-        <p style="margin-bottom:0"><button type="button" class="secondary small" id="download-pw">CSVで保存</button></p></div>`;
-      document.getElementById('download-pw').onclick = () => {
-        const csv = ['会社コード,社員番号,名前,部署,初期パスワード', ...list.map((p) => [c.code, p.login_id, p.name, p.department || '', p.password].join(','))].join('\r\n');
+        <p style="margin-bottom:0"><button type="button" class="secondary small" data-download>CSVで保存</button></p></div>`;
+      target.querySelector('[data-download]').onclick = () => {
+        const csv = [head.join(','), ...list.map((p) => cells(p).join(','))].join('\r\n');
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); // ﻿:Excelで文字化けしないため
-        a.download = `logiben_login_${c.code}.csv`; // 日本語のファイル名は一部のブラウザで化けるため英字
+        a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' })); // \uFEFF:Excelで文字化けしないため
+        a.download = filename; // 日本語のファイル名は一部のブラウザで化けるため英字
         document.body.append(a);
         a.click();
         a.remove();
       };
-      document.getElementById('password-notice').scrollIntoView({ behavior: 'smooth' });
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+    const employeePwOptions = () => ({ code: current().code, filename: `logiben_login_${current().code}.csv` });
+
+    // =============== 会社の担当者・お店のログイン用アカウント ===============
+    async function loadAccounts(el) {
+      const { kind, owner } = el.dataset;
+      const list = await api(`/api/admin/accounts?${kind}_id=${owner}`);
+      el._list = list;
+      el.innerHTML = `<div class="acc-notice"></div>
+        <div class="table-wrap"><table>
+          <tr><th>ログインID</th><th>名前</th><th></th></tr>
+          ${list.map((a) => `<tr data-id="${a.id}" class="${a.active ? '' : 'inactive'}"><td>${esc(a.login_id)}</td><td>${esc(a.name)} ${badge(a.active)}</td>
+            <td class="num" style="white-space:nowrap"><button type="button" class="secondary small" data-acc="toggle">${a.active ? '停止' : '再開'}</button>
+            <button type="button" class="secondary small" data-acc="reset">パスワード再発行</button></td></tr>`).join('') || '<tr><td colspan="3" class="sub">まだアカウントがありません</td></tr>'}
+        </table></div>
+        <form class="row acc-add" style="margin-top:8px">
+          <div style="flex:0 1 150px"><input name="login_id" placeholder="ログインID(半角英数)" required></div>
+          <div><input name="name" placeholder="${kind === 'company' ? '担当者名(例:総務課 木村)' : '名前(例:店長 山本)'}" required></div>
+          <div style="flex:0 0 auto"><button type="submit">アカウント追加</button></div>
+        </form>`;
+    }
+    const accountPwOptions = (el) =>
+      el.dataset.kind === 'company'
+        ? { code: current().code, idLabel: 'ログインID', who: '会社のご担当者', filename: `logiben_login_${current().code}_staff.csv` }
+        : { idLabel: 'ログインID', who: 'お店', filename: 'logiben_login_shop.csv' };
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-acc]');
+      if (!btn) return;
+      const el = btn.closest('.accounts');
+      const a = el._list.find((x) => x.id === Number(btn.closest('tr').dataset.id));
+      if (btn.dataset.acc === 'toggle') {
+        if (a.active && !confirm(`「${a.name}」(${a.login_id})を停止しますか?ログインできなくなります。`)) return;
+        if (await run(() => api(`/api/admin/accounts/${a.id}`, { method: 'PUT', body: { login_id: a.login_id, name: a.name, active: !a.active } }), a.active ? '停止しました' : '再開しました')) loadAccounts(el);
+      } else if (btn.dataset.acc === 'reset') {
+        if (!confirm(`「${a.name}」のパスワードを作り直しますか?\n今のパスワードは使えなくなります。`)) return;
+        const r = await run(() => api(`/api/admin/users/${a.id}/reset-password`, { method: 'POST' }));
+        if (r) showPasswords(el.querySelector('.acc-notice'), [{ ...a, password: r.password }], accountPwOptions(el));
+      }
+    });
+
+    document.addEventListener('submit', async (e) => {
+      if (!e.target.classList.contains('acc-add')) return;
+      e.preventDefault();
+      const el = e.target.closest('.accounts');
+      const body = { ...Object.fromEntries(new FormData(e.target)), [`${el.dataset.kind}_id`]: Number(el.dataset.owner) };
+      const r = await run(() => api('/api/admin/accounts', { method: 'POST', body }), 'アカウントを追加しました');
+      if (r) {
+        await loadAccounts(el);
+        showPasswords(el.querySelector('.acc-notice'), [r], accountPwOptions(el));
+      }
+    });
 
     const companyEl = document.getElementById('company');
 
@@ -318,8 +384,8 @@
         }
         case 'reset-pw': {
           if (!confirm(`${emp.name} さんのパスワードを作り直しますか?\n今のパスワードは使えなくなります。`)) return;
-          const r = await run(() => api(`/api/admin/employees/${emp.id}/reset-password`, { method: 'POST' }));
-          if (r) showPasswords([{ ...emp, password: r.password }]);
+          const r = await run(() => api(`/api/admin/users/${emp.id}/reset-password`, { method: 'POST' }));
+          if (r) showPasswords(document.getElementById('password-notice'), [{ ...emp, password: r.password }], employeePwOptions());
           break;
         }
       }
@@ -333,7 +399,7 @@
       const r = await run(() => api('/api/admin/employees', { method: 'POST', body }), '社員を追加しました');
       if (r) {
         await loadCompanies(c.id);
-        showPasswords([r]);
+        showPasswords(document.getElementById('password-notice'), [r], employeePwOptions());
       }
     });
 
@@ -387,7 +453,7 @@
         toast(`途中で止まりました(${created.length}人は登録済み):${err.message}`, true);
       }
       await loadCompanies(c.id);
-      if (created.length) showPasswords(created);
+      if (created.length) showPasswords(document.getElementById('password-notice'), created, employeePwOptions());
     });
 
     // ---------- はじめに ----------

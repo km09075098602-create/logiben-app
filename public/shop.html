@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 お店の画面</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/print.css">
+  <style>@page { size: A4 portrait; margin: 12mm; }</style>
+</head>
+<body>
+  <header>
+    <div><h1>🍱 ロジ弁</h1><div class="who" id="who"></div></div>
+    <button type="button" id="logout">ログアウト</button>
+  </header>
+  <main>
+    <div class="tabs no-print">
+      <button type="button" data-tab="orders" class="active">注文</button>
+      <button type="button" data-tab="menu">メニュー</button>
+      <button type="button" data-tab="payments">お支払い</button>
+    </div>
+
+    <!-- ===== 注文 ===== -->
+    <section id="tab-orders">
+      <div class="card no-print">
+        <div class="row">
+          <div><label for="date">お届け日</label><input type="date" id="date"></div>
+          <div style="flex:0 0 auto;display:flex;gap:6px">
+            <button type="button" class="secondary" id="prev">前の日</button>
+            <button type="button" class="secondary" id="next">次の日</button>
+            <button type="button" class="secondary" id="print-orders">印刷</button>
+          </div>
+        </div>
+      </div>
+      <div id="orders"></div>
+    </section>
+
+    <!-- ===== メニュー ===== -->
+    <section id="tab-menu" hidden>
+      <p class="sub">値段は税込みで入力してください。値段を変えても、すでに入っている注文の値段は変わりません。「販売中」のチェックを外すと、社員の注文画面に出なくなります。</p>
+      <div class="card">
+        <div class="table-wrap"><table id="menu"></table></div>
+        <form class="row" id="add-item" style="margin-top:8px">
+          <div><input name="name" placeholder="お弁当の名前" required></div>
+          <div><input name="description" placeholder="説明(なくても可)"></div>
+          <div style="flex:0 1 110px"><input name="price" inputmode="numeric" placeholder="値段" required></div>
+          <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== お支払い ===== -->
+    <section id="tab-payments" hidden>
+      <div class="card no-print">
+        <div class="row">
+          <div><label for="period">期間(2週間ごと)</label><select id="period"></select></div>
+          <div style="flex:0 0 auto"><button type="button" id="print-payment">明細を印刷</button></div>
+        </div>
+      </div>
+      <div id="payment"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { api, yen, esc, logout, toast, dateLabel, deadlineLabel } from '/common.js';
+    document.getElementById('logout').onclick = logout;
+    const $ = (id) => document.getElementById(id);
+
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        for (const t of ['orders', 'menu', 'payments']) $('tab-' + t).hidden = b.dataset.tab !== t;
+      })
+    );
+
+    async function run(fn, message) {
+      try {
+        const r = await fn();
+        if (message) toast(message);
+        return r;
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    // ================= 注文 =================
+    $('date').value = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    const shift = (days) => {
+      const d = new Date($('date').value + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + days);
+      $('date').value = d.toISOString().slice(0, 10);
+      loadOrders();
+    };
+    $('prev').onclick = () => shift(-1);
+    $('next').onclick = () => shift(1);
+    $('date').onchange = loadOrders;
+    $('print-orders').onclick = () => print();
+
+    async function loadOrders() {
+      const r = await api('/api/shop/orders?date=' + $('date').value);
+      const status = r.fixed
+        ? `<span class="badge" style="background:var(--ok)">確定</span>`
+        : `<span class="badge" style="background:#e0a100">受付中</span> <span class="sub">締め切り ${deadlineLabel(r.deadline)} まで数が変わります</span>`;
+      if (!r.total) {
+        $('orders').innerHTML = `<div class="card"><div class="sub">${dateLabel(r.date)}</div><p style="margin:4px 0 0">この日の注文はありません。 ${status}</p></div>`;
+        return;
+      }
+      // 会社・部署ごとにまとめる
+      const groups = new Map();
+      for (const o of r.orders) {
+        const key = `${o.company_name}\t${o.department || ''}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(o);
+      }
+      $('orders').innerHTML = `
+        <div class="page">
+          <div class="d-head">
+            <div><div class="sub">${dateLabel(r.date)} の注文 ${status}</div>
+              <div class="d-company">${esc(me.shop_name)}</div></div>
+            <div class="d-total">${r.total}<small>食</small></div>
+          </div>
+          <h3>お弁当ごとの数</h3>
+          <table class="d-list">
+            <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
+            ${r.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num"><b>${i.count}</b></td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
+            <tr class="total"><td colspan="2">合計</td><td class="num">${r.total}</td><td class="num">${yen(r.amount)}</td></tr>
+          </table>
+          <h3>お届け先ごとの中身</h3>
+          ${[...groups].map(([key, list]) => {
+            const [company, dept] = key.split('\t');
+            return `<h3 style="font-weight:400">${esc(company)} ${esc(dept)}(${list.length}食)</h3>
+              <table class="d-list"><tr><th>名前</th><th>お弁当</th></tr>
+              ${list.map((o) => `<tr><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td></tr>`).join('')}</table>`;
+          }).join('')}
+        </div>`;
+    }
+
+    // ================= メニュー =================
+    let items = [];
+    const badge = (active) => (active ? '' : '<span class="badge">停止中</span>');
+    const menuRow = (i) => `<tr data-item="${i.id}" class="${i.active ? '' : 'inactive'}">
+      <td>${esc(i.name)} ${badge(i.active)}</td><td class="sub">${esc(i.description || '')}</td>
+      <td class="num">${yen(i.price)}</td>
+      <td class="num"><button type="button" class="secondary small" data-act="edit">編集</button></td></tr>`;
+    const menuEditRow = (i) => `<tr data-item="${i.id}" class="editing">
+      <td><input name="name" value="${esc(i.name)}"></td>
+      <td><input name="description" value="${esc(i.description || '')}"></td>
+      <td><input name="price" inputmode="numeric" value="${i.price}" style="width:90px"></td>
+      <td class="num" style="white-space:nowrap">
+        <label class="check"><input type="checkbox" name="active" ${i.active ? 'checked' : ''}> 販売中</label>
+        <button type="button" class="small" data-act="save">保存</button>
+        <button type="button" class="secondary small" data-act="cancel">やめる</button></td></tr>`;
+
+    async function loadMenu() {
+      items = await api('/api/shop/menu');
+      $('menu').innerHTML = '<tr><th>お弁当</th><th>説明</th><th class="num">値段(税込)</th><th></th></tr>' +
+        (items.map(menuRow).join('') || '<tr><td colspan="4" class="sub">まだメニューがありません</td></tr>');
+    }
+    $('menu').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const tr = btn.closest('tr');
+      const item = items.find((i) => i.id === Number(tr.dataset.item));
+      if (btn.dataset.act === 'edit') tr.outerHTML = menuEditRow(item);
+      if (btn.dataset.act === 'cancel') tr.outerHTML = menuRow(item);
+      if (btn.dataset.act === 'save') {
+        const v = (n) => tr.querySelector(`[name=${n}]`);
+        const body = { name: v('name').value, description: v('description').value, price: v('price').value, active: v('active').checked };
+        if (await run(() => api(`/api/shop/menu/${item.id}`, { method: 'PUT', body }), '保存しました')) loadMenu();
+      }
+    });
+    $('add-item').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (await run(() => api('/api/shop/menu', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }), 'メニューを追加しました')) {
+        e.target.reset();
+        loadMenu();
+      }
+    });
+
+    // ================= お支払い =================
+    const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+    const periodLabel = (p) => `${p.start.slice(0, 4)}年 ${dayLabel(p.start)}〜${dayLabel(p.end)}`;
+    let periodsReady = false;
+    async function loadPayment(start) {
+      const r = await api('/api/shop/payments' + (start ? '?start=' + start : ''));
+      if (!periodsReady) {
+        $('period').innerHTML = r.periods.map((p) => `<option value="${p.start}">${periodLabel(p)}</option>`).join('');
+        periodsReady = true;
+      }
+      $('period').value = r.period.start;
+      const notice = r.complete ? '' : `<div class="notice warn no-print">この期間はまだ終わっていないため、<b>途中経過</b>です。</div>`;
+      const p = r.payment;
+      if (!p) {
+        $('payment').innerHTML = notice + '<p class="sub">この期間の注文はありません。</p>';
+        return;
+      }
+      $('payment').innerHTML = `${notice}<div class="page">
+        <div class="d-head">
+          <div><div class="sub">ロジ弁 お支払い明細 ${periodLabel(r.period)}${r.complete ? '' : '(途中経過)'}</div>
+            <div class="d-company">${esc(p.shop_name)} 様</div></div>
+          <div style="text-align:right"><div class="sub">お支払い額</div><div class="d-total">${yen(p.payment)}</div></div>
+        </div>
+        <table class="bill">
+          <tr><th>内容</th><th class="num">金額</th></tr>
+          <tr><td>お弁当代 合計(税込・${p.meals}食)</td><td class="num">${yen(p.bento_total)}</td></tr>
+          <tr><td>営業代行料(お弁当代の${r.agency_fee_percent}%・税込、うち消費税 ${yen(p.agency_fee_tax)})</td><td class="num">− ${yen(p.agency_fee)}</td></tr>
+          <tr class="total"><td>お支払い額</td><td class="num">${yen(p.payment)}</td></tr>
+        </table>
+        <h3>お弁当ごとの数</h3>
+        <table class="d-list">
+          <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th><th class="num">小計</th></tr>
+          ${p.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num">${i.count}</td><td class="num">${yen(i.price * i.count)}</td></tr>`).join('')}
+        </table></div>`;
+    }
+    $('period').onchange = () => loadPayment($('period').value);
+    $('print-payment').onclick = () => print();
+
+    const me = await api('/api/me');
+    if (me.role !== 'shop') location.href = '/';
+    $('who').textContent = me.shop_name;
+    loadOrders();
+    loadMenu();
+    loadPayment();
+  </script>
+</body>
+</html>

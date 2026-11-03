@@ -5,31 +5,12 @@
 import { allocateMonth, todayJST, addDays } from './rules.js';
 import { companyInvoices, shopPayments, periodOf, recentPeriods, toCsv } from './billing.js';
 import { loadSettings } from './settings.js';
+import { ordersBetween } from './queries.js';
 
-const isMonth = (m) => typeof m === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+export const isMonth = (m) => typeof m === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
-/** 注文を、計算に必要な情報(会社・社員・お店)と一緒に取り出す */
-async function ordersBetween(db, from, to) {
-  const { results } = await db
-    .prepare(
-      `SELECT o.id, o.delivery_date, o.price, o.item_name, o.channel,
-              o.user_id, u.login_id, u.name AS user_name, u.department,
-              co.id AS company_id, co.code AS company_code, co.name AS company_name,
-              s.id AS shop_id, s.name AS shop_name
-       FROM orders o
-       JOIN users u ON u.id = o.user_id
-       JOIN companies co ON co.id = u.company_id
-       JOIN shops s ON s.id = o.shop_id
-       WHERE o.kind = 'bento' AND o.delivery_date BETWEEN ? AND ?
-       ORDER BY o.delivery_date, co.id, u.department, u.login_id`
-    )
-    .bind(from, to)
-    .all();
-  return results;
-}
-
-const monthRange = (month) => [`${month}-01`, `${month}-31`];
+export const monthRange = (month) => [`${month}-01`, `${month}-31`];
 
 /** CSVファイルとして返す(ファイル名は英数字のみ:日本語は一部のブラウザで化けるため) */
 const csvResponse = (c, filename, rows) =>

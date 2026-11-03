@@ -8,9 +8,11 @@
 </head>
 <body>
   <header><h1>🍱 ロジ弁</h1><span class="who">運営:達磨商事</span></header>
-  <main style="max-width:420px">
+  <main style="max-width:440px">
     <div class="tabs">
-      <button type="button" data-type="employee" class="active">社員の方</button>
+      <button type="button" data-type="employee" class="active">社員</button>
+      <button type="button" data-type="company">会社の担当者</button>
+      <button type="button" data-type="shop">お店</button>
       <button type="button" data-type="admin">管理者</button>
     </div>
     <form class="card" id="form">
@@ -24,17 +26,25 @@
       <input id="password" type="password" autocomplete="current-password" required>
       <p><button type="submit" style="width:100%">ログイン</button></p>
     </form>
-    <p class="sub">試作版のお試し用:会社コード <b>MT01</b> / 社員番号 <b>1001</b>〜<b>1004</b> / パスワード <b>demo1234</b><br>
-      管理者:ID <b>admin</b> / パスワード <b>admin1234</b></p>
+    <div class="sub">
+      <p style="margin:0 0 4px"><b>試作版のお試し用</b>(パスワードはすべて <b>demo1234</b>、管理者のみ <b>admin1234</b>)</p>
+      <ul style="margin:0;padding-left:1.2em">
+        <li>社員:会社コード MT01 / 社員番号 1001〜1004</li>
+        <li>会社の担当者:会社コード MT01 / ログインID tanto</li>
+        <li>お店:ログインID matsue・ohashi・shinji</li>
+        <li>管理者:ログインID admin</li>
+      </ul>
+    </div>
   </main>
   <script type="module">
     import { api, toast } from '/common.js';
+    const PAGES = { employee: '/order.html', company: '/company.html', shop: '/shop.html', admin: '/admin.html' };
     let type = 'employee';
     document.querySelectorAll('.tabs button').forEach((b) =>
       b.addEventListener('click', () => {
         type = b.dataset.type;
         document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
-        document.getElementById('company-field').hidden = type !== 'employee';
+        document.getElementById('company-field').hidden = !['employee', 'company'].includes(type);
         document.getElementById('login-label').textContent = type === 'employee' ? '社員番号' : 'ログインID';
       })
     );
@@ -50,7 +60,7 @@
             password: document.getElementById('password').value,
           },
         });
-        location.href = r.role === 'admin' ? '/admin.html' : '/order.html';
+        location.href = PAGES[r.role];
       } catch (err) {
         toast(err.message, true);
       }
