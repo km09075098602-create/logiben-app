@@ -303,6 +303,7 @@ const ACTIONS = {
       `会社負担:${yen(sum.used)} / 上限 ${yen(sum.cap)}(税抜・${pct}%)`,
       `会社負担の残り:${yen(sum.remaining)}(税抜)`,
       `あなたのお支払い:${yen(mine)}`,
+      ...(sum.points.enabled ? [`ポイント:${sum.points.balance}pt(Webの画面で注文するときに使えます)`] : []),
     ];
     if (sum.reached) lines.push('', '⚠️ 上限に達しています。今月の残りは全額ご自身の負担です。');
     else if (sum.warn) lines.push('', `⚠️ 上限の${sum.warn_percent}%を超えています。`);

@@ -100,9 +100,9 @@
       }
       $('companies').innerHTML = `${notice}
         <div class="card table-wrap no-print"><table>
-          <tr><th>会社</th><th class="num">食数</th><th class="num">会社負担分</th><th class="num">利用料</th><th class="num">利用料の消費税</th><th class="num">請求額</th><th class="num">(参考)社員負担</th></tr>
-          ${r.companies.map((c) => `<tr><td><a href="#company-${c.company_id}">${esc(c.company_name)}</a></td><td class="num">${c.meals}</td><td class="num">${yen(c.company_share)}</td><td class="num">${yen(c.service_fee)}</td><td class="num">${yen(c.service_tax)}</td><td class="num"><b>${yen(c.total)}</b></td><td class="num">${yen(c.employee_share)}</td></tr>`).join('')}
-          <tr class="total"><td>合計</td><td class="num">${sum('meals')}</td><td class="num">${yen(sum('company_share'))}</td><td class="num">${yen(sum('service_fee'))}</td><td class="num">${yen(sum('service_tax'))}</td><td class="num"><b>${yen(sum('total'))}</b></td><td class="num">${yen(sum('employee_share'))}</td></tr>
+          <tr><th>会社</th><th class="num">食数</th><th class="num">会社負担分</th><th class="num">利用料</th><th class="num">利用料の消費税</th><th class="num">請求額</th><th class="num">(参考)社員負担</th><th class="num">ポイント(達磨商事負担)</th></tr>
+          ${r.companies.map((c) => `<tr><td><a href="#company-${c.company_id}">${esc(c.company_name)}</a></td><td class="num">${c.meals}</td><td class="num">${yen(c.company_share)}</td><td class="num">${yen(c.service_fee)}</td><td class="num">${yen(c.service_tax)}</td><td class="num"><b>${yen(c.total)}</b></td><td class="num">${yen(c.employee_share)}</td><td class="num">${c.points_used}pt</td></tr>`).join('')}
+          <tr class="total"><td>合計</td><td class="num">${sum('meals')}</td><td class="num">${yen(sum('company_share'))}</td><td class="num">${yen(sum('service_fee'))}</td><td class="num">${yen(sum('service_tax'))}</td><td class="num"><b>${yen(sum('total'))}</b></td><td class="num">${yen(sum('employee_share'))}</td><td class="num">${sum('points_used')}pt</td></tr>
         </table></div>
         <h2 class="no-print">会社ごとの請求明細</h2>
         ${r.companies.map((c) => invoicePage(c, r)).join('')}`;
@@ -122,6 +122,7 @@
           <tr><td>サービス利用料(${yen(r.service_fee)} × 食数・税抜)</td><td class="num">${c.meals}食</td><td class="num">${yen(c.service_fee)}</td></tr>
           <tr><td>サービス利用料の消費税(10%)</td><td></td><td class="num">${yen(c.service_tax)}</td></tr>
           <tr class="total"><td>合計(税込)</td><td></td><td class="num">${yen(c.total)}</td></tr>
+          ${c.points_used ? `<tr><td colspan="3" class="sub">※ 社員のポイント利用 ${c.points_used}pt 分は、お食事代から先に差し引いてから半分ずつにしています(ポイント分は達磨商事が負担)</td></tr>` : ''}
         </table>
         <p class="sub">8%対象 ${yen(c.company_share_bento)}(うち消費税 ${yen(c.company_share_tax)})/ 10%対象 ${yen(c.company_share_lunch + c.service_fee + c.service_tax)}(うち消費税 ${yen(c.company_share_lunch_tax + c.service_tax)})</p>
         <h3>社員ごとの内訳</h3>
@@ -166,6 +167,7 @@
             <tr><th>内容</th><th class="num">金額</th></tr>
             <tr><td>お食事代 合計(税込・${s.meals}食${s.meals_lunch ? `、うちだるまランチ ${s.meals_lunch}回` : ''})</td><td class="num">${yen(s.bento_total)}</td></tr>
             <tr><td>営業代行料(お弁当代の${r.agency_fee_percent}%・税込、うち消費税 ${yen(s.agency_fee_tax)})</td><td class="num">− ${yen(s.agency_fee)}</td></tr>
+            ${s.points_used ? `<tr><td colspan="2" class="sub">※ お食事代のうち ${yen(s.points_used)} は、社員のポイント利用分として達磨商事が負担しています</td></tr>` : ''}
             <tr class="total"><td>お支払い額</td><td class="num">${yen(s.payment)}</td></tr>
           </table>
           <h3>お弁当ごとの数</h3>

@@ -11,4 +11,8 @@ export const SETTING_LABELS = {
   agency_fee_percent: '営業代行料(%)',
   order_days_ahead: '何日先まで注文できるか(日)',
   shop_period_anchor: 'お店への支払いの区切りの起点日(この日から2週間ずつ)',
+  points_enabled: 'ポイント還元(1=使う / 0=使わない)',
+  point_per_use: '1回の利用でもらえるポイント',
+  point_expiry_months: 'ポイントの有効期限(か月)',
+  point_max_per_order: '1回の注文で使えるポイントの上限',
 };

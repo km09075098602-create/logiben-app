@@ -10,6 +10,10 @@ INSERT INTO settings (key, value, label, sort_order) VALUES ('service_fee', '150
 INSERT INTO settings (key, value, label, sort_order) VALUES ('agency_fee_percent', '10', '営業代行料(%)', 8);
 INSERT INTO settings (key, value, label, sort_order) VALUES ('order_days_ahead', '14', '何日先まで注文できるか(日)', 9);
 INSERT INTO settings (key, value, label, sort_order) VALUES ('shop_period_anchor', '2027-01-04', 'お店への支払いの区切りの起点日(この日から2週間ずつ)', 10);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('points_enabled', '1', 'ポイント還元(1=使う / 0=使わない)', 11);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_per_use', '10', '1回の利用でもらえるポイント', 12);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_expiry_months', '12', 'ポイントの有効期限(か月)', 13);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_max_per_order', '50', '1回の注文で使えるポイントの上限', 14);
 INSERT INTO companies (id, code, name) VALUES (1, 'MT01', '松江テック株式会社');
 INSERT INTO companies (id, code, name) VALUES (2, 'SS02', '宍道湖物産株式会社');
 INSERT INTO shops (id, name) VALUES (1, 'まつえ弁当');

@@ -5,6 +5,10 @@
 // =============================================================
 import { allocateMonth, previewShare, isOrderOpen, orderableDates, deadlineFor, closedReason, todayJST } from './rules.js';
 import { InputError } from './master.js';
+import { pointBalance, usablePoints } from './points.js';
+
+/** いまの時刻(UTC "YYYY-MM-DD HH:MM:SS")。ポイントを使った時刻の記録に使う */
+const nowUtc = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
@@ -12,13 +16,26 @@ const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && 
 export async function monthOrders(db, userId, month) {
   const { results } = await db
     .prepare(
-      `SELECT o.id, o.delivery_date, o.price, o.item_name, o.channel, o.kind, o.tax_rate, o.created_at, s.name AS shop_name
+      `SELECT o.id, o.delivery_date, o.price, o.item_name, o.channel, o.kind, o.tax_rate, o.points_used, o.created_at, s.name AS shop_name
        FROM orders o JOIN shops s ON s.id = o.shop_id
        WHERE o.user_id = ? AND substr(o.delivery_date, 1, 7) = ?`
     )
     .bind(userId, month)
     .all();
   return results;
+}
+
+/**
+ * ポイントの残高。exclude を渡すと、その日のその種類の注文を除いて数える
+ * (注文を変更するとき、その注文で使っていたポイントを戻してから数えるため)
+ */
+export async function pointsOf(db, userId, s, exclude = null) {
+  const { results } = await db
+    .prepare('SELECT delivery_date, kind, points_used, updated_at AS used_at FROM orders WHERE user_id = ?')
+    .bind(userId)
+    .all();
+  const rows = exclude ? results.filter((o) => !(o.delivery_date === exclude.date && o.kind === exclude.kind)) : results;
+  return { ...pointBalance(rows, s, todayJST()), enabled: !!s.points_enabled, max_per_order: s.point_max_per_order, per_use: s.point_per_use };
 }
 
 /** 今月の利用状況(会社負担の使用額・残り・お知らせ)と、注文できる日 */
@@ -34,6 +51,7 @@ export async function employeeSummary(db, user, s, month = todayJST().slice(0, 7
     reached: r.reached,
     warn_percent: s.warn_percent,
     orders: r.orders,
+    points: await pointsOf(db, user.id, s),
   };
 }
 
@@ -52,10 +70,12 @@ export async function dayMenu(db, user, date, s) {
     .bind(date)
     .all();
   const current = await db
-    .prepare(`SELECT id, menu_item_id, item_name, price FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`)
+    .prepare(`SELECT id, menu_item_id, item_name, price, points_used FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`)
     .bind(user.id, date)
     .first();
   const allocated = allocateMonth(orders, s).orders.find((o) => current && o.id === current.id);
+  // この日に使えるポイント(この日の注文で使っているポイントは、戻して数える)
+  const points = await pointsOf(db, user.id, s, { date, kind: 'bento' });
   const { results: closedShops } = await db
     .prepare('SELECT s.name FROM closed_days d JOIN shops s ON s.id = d.shop_id WHERE d.date = ? AND s.active = 1')
     .bind(date)
@@ -67,6 +87,7 @@ export async function dayMenu(db, user, date, s) {
     shops_closed: closedShops.map((r) => r.name), // この日お休みのお店
     deadline: deadlineFor(date, s).toISOString(),
     current: current ? { ...current, ...allocated } : null,
+    points,
     items: items.map((it) => {
       const p = previewShare(orders, date, it.price, s);
       return { ...it, company_share: p.company_share, employee_share: p.employee_share };
@@ -79,7 +100,7 @@ export async function dayMenu(db, user, date, s) {
  * channel:注文経路('web' / 'line')
  * 戻り値:注文したお弁当と、その注文の負担額、注文後の今月の利用状況
  */
-export async function placeOrder(db, user, date, menuItemId, s, channel = 'web') {
+export async function placeOrder(db, user, date, menuItemId, s, channel = 'web', usePoints = false) {
   if (isDate(date) && closedReason(date, s)) throw new InputError(`この日はお休みです(${closedReason(date, s)})`);
   if (!isDate(date) || !isOrderOpen(date, s)) throw new InputError('この日の注文は締め切られています');
   const item = await db
@@ -90,15 +111,18 @@ export async function placeOrder(db, user, date, menuItemId, s, channel = 'web')
   const shopClosed = await db.prepare('SELECT 1 FROM closed_days WHERE shop_id = ? AND date = ?').bind(item.shop_id, date).first();
   if (shopClosed) throw new InputError('このお店はこの日お休みです');
   if (await lunchOn(db, user.id, date)) throw new InputError('この日はだるまランチを利用済みです');
+  // ポイント:この日の注文で使っていた分は戻してから数え直す
+  const pointsUsed = usePoints ? usablePoints((await pointsOf(db, user.id, s, { date, kind: 'bento' })).balance, item.price, s) : 0;
   await db
     .prepare(
-      `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, channel, tax_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, channel, tax_rate, points_used, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?10, ?10)
        ON CONFLICT (user_id, delivery_date, kind) DO UPDATE SET
          menu_item_id = excluded.menu_item_id, shop_id = excluded.shop_id,
-         item_name = excluded.item_name, price = excluded.price, channel = excluded.channel, updated_at = datetime('now')`
+         item_name = excluded.item_name, price = excluded.price, channel = excluded.channel,
+         points_used = excluded.points_used, updated_at = excluded.updated_at`
     )
-    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent)
+    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent, pointsUsed, nowUtc())
     .run();
   const month = allocateMonth(await monthOrders(db, user.id, date.slice(0, 7)), s);
   const mine = month.orders.find((o) => o.delivery_date === date && o.kind === 'bento');
@@ -141,6 +165,7 @@ export async function lunchOptions(db, user, s) {
   const month = allocateMonth(orders, s);
   return {
     date: today,
+    points: await pointsOf(db, user.id, s),
     closed_reason: closedReason(today, s),
     used: used ? { ...used, ...month.orders.find((o) => o.id === used.id) } : null,
     bento_today: bento ? bento.item_name : null,
@@ -152,7 +177,7 @@ export async function lunchOptions(db, user, s) {
 }
 
 /** だるまランチを利用する(今日の分を記録) */
-export async function recordLunch(db, user, menuItemId, s, channel = 'web') {
+export async function recordLunch(db, user, menuItemId, s, channel = 'web', usePoints = false) {
   const today = todayJST();
   const reason = closedReason(today, s);
   if (reason) throw new InputError(`今日はだるまランチを使えません(${reason})`);
@@ -166,12 +191,13 @@ export async function recordLunch(db, user, menuItemId, s, channel = 'web') {
   if (await lunchOn(db, user.id, today)) throw new InputError('だるまランチは1日1回までです(今日はもう利用済みです)');
   const bento = await db.prepare(`SELECT 1 FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`).bind(user.id, today).first();
   if (bento) throw new InputError('今日はお弁当を注文しているため、だるまランチは使えません');
+  const pointsUsed = usePoints ? usablePoints((await pointsOf(db, user.id, s)).balance, item.price, s) : 0;
   await db
     .prepare(
-      `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, channel, kind, tax_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'daruma_lunch', ?)`
+      `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price, channel, kind, tax_rate, points_used, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'daruma_lunch', ?, ?, ?10, ?10)`
     )
-    .bind(user.id, today, item.id, item.shop_id, item.name, item.price, channel, s.eatin_tax_rate_percent)
+    .bind(user.id, today, item.id, item.shop_id, item.name, item.price, channel, s.eatin_tax_rate_percent, pointsUsed, nowUtc())
     .run();
   return lunchOptions(db, user, s);
 }

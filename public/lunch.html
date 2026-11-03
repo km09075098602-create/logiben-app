@@ -61,6 +61,9 @@
       main.innerHTML = `
         <div class="notice warn"><b>お店で、お店の方の前で</b>メニューを選んで「これを食べる」を押し、出てきた画面を見せてください。<br>
           1日1回まで。押したあとは自分では取り消せません(間違えたときはお店の方に取り消してもらえます)。</div>
+        ${r.points.enabled && r.points.balance > 0
+          ? `<label class="check points-use"><input type="checkbox" id="use-points"> ポイントを使う(残り ${r.points.balance}pt・1回 ${r.points.max_per_order}ptまで。使った分を引いてから会社と半分ずつ)</label>`
+          : ''}
         ${[...byShop].map(([shop, items]) => `<div class="card"><div class="shop-name">${esc(shop)}</div>
           ${items.map((it) => `<div class="item">
             <div><div class="name">${esc(it.name)}</div><div class="sub">${esc(it.description || '')}</div></div>
@@ -72,9 +75,10 @@
         </div>`).join('')}`;
       main.querySelectorAll('button[data-id]').forEach((b) =>
         b.addEventListener('click', async () => {
-          if (!confirm(`${b.dataset.label} でだるまランチを使います。\nお店の方の前で押していますか?(あとから自分では取り消せません)`)) return;
+          const usePoints = !!document.getElementById('use-points')?.checked;
+          if (!confirm(`${b.dataset.label} でだるまランチを使います。${usePoints ? '(ポイントを使います)' : ''}\nお店の方の前で押していますか?(あとから自分では取り消せません)`)) return;
           try {
-            showTicket(await api('/api/employee/lunch', { method: 'POST', body: { menu_item_id: Number(b.dataset.id) } }));
+            showTicket(await api('/api/employee/lunch', { method: 'POST', body: { menu_item_id: Number(b.dataset.id), use_points: usePoints } }));
           } catch (e) { toast(e.message, true); }
         })
       );
@@ -88,7 +92,7 @@
           <div class="ok">✅ だるまランチ ご利用</div>
           <div class="shop">${esc(u.shop_name)}</div>
           <div class="t-item">${esc(u.item_name)} ${yen(u.price)}</div>
-          <div class="sub">会社負担 ${yen(u.company_share)} ・ あなた ${yen(u.employee_share)}</div>
+          <div class="sub">${u.points_used ? `ポイント ${u.points_used}pt ・ ` : ''}会社負担 ${yen(u.company_share)} ・ あなた ${yen(u.employee_share)}</div>
           <div class="who"><b>${esc(me.company_name)}</b><br>${esc(me.department || '')} ${esc(me.name)} 様</div>
           <div class="sub" style="margin-top:8px">${dateLabel(r.date)} ${timeOf(u.created_at)} に利用</div>
           <div class="clock"><span class="pulse"></span><span id="clock"></span></div>

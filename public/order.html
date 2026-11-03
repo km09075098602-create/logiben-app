@@ -51,6 +51,8 @@
             <span>使用 ${yen(s.used)}(${pct}%)</span><span>残り <b>${yen(s.remaining)}</b></span>
           </div>
           <div class="sub">今月のご利用 ${s.orders.length}食${lunchCount ? `(うちだるまランチ ${lunchCount}回)` : ''} ・ あなたのお支払い 合計 ${yen(myTotal)}</div>
+          ${s.points.enabled ? `<div class="points">🎁 ポイント <b>${s.points.balance}</b> pt
+            <span class="sub">(1回の利用で${s.points.per_use}pt${s.points.next_expiry ? `・${s.points.next_expiry.date.replace(/^(\d+)-0?(\d+)-0?(\d+)$/, '$1年$2月$3日')}に${s.points.next_expiry.amount}ptが期限切れ` : ''})</span></div>` : ''}
         </div>
         <a class="btn secondary" href="/lunch.html" style="display:block;text-align:center;margin-bottom:12px">🍜 だるまランチを使う(お店で食べるとき)</a>`;
       renderLine(s);
@@ -75,12 +77,15 @@
       const el = document.getElementById('day');
       const head = `<h2>${dateLabel(m.date)} のお弁当</h2>
         <p class="sub">${m.open ? `締め切り:${deadlineLabel(m.deadline)}(それまでは変更・取り消しできます)` : 'この日の注文は締め切りました'}</p>
-        ${m.shops_closed.length ? `<p class="sub">この日は ${m.shops_closed.map(esc).join('・')} がお休みです。</p>` : ''}`;
+        ${m.shops_closed.length ? `<p class="sub">この日は ${m.shops_closed.map(esc).join('・')} がお休みです。</p>` : ''}
+        ${m.open && m.points.enabled && m.points.balance > 0
+          ? `<label class="check points-use"><input type="checkbox" id="use-points"> ポイントを使う(残り ${m.points.balance}pt・1回 ${m.points.max_per_order}ptまで。使った分を引いてから会社と半分ずつ)</label>`
+          : ''}`;
       const current = m.current
         ? `<div class="card current">
             <div class="sub">ご注文中</div>
             <div style="font-weight:700">${esc(m.current.item_name)}</div>
-            <div>お弁当代 ${yen(m.current.price)} → 会社負担 ${yen(m.current.company_share)} / <b>あなた ${yen(m.current.employee_share)}</b></div>
+            <div>お弁当代 ${yen(m.current.price)}${m.current.points_used ? ` − ポイント ${m.current.points_used}pt` : ''} → 会社負担 ${yen(m.current.company_share)} / <b>あなた ${yen(m.current.employee_share)}</b></div>
             ${m.open ? '<p style="margin:8px 0 0"><button type="button" class="secondary" id="cancel">この日の注文を取り消す</button></p>' : ''}
           </div>`
         : '';
@@ -108,9 +113,10 @@
 
       el.querySelectorAll('button[data-id]').forEach((b) =>
         b.addEventListener('click', async () => {
-          if (!confirm(`${dateLabel(selected)} に「${b.dataset.name}」を注文しますか?`)) return;
+          const usePoints = !!document.getElementById('use-points')?.checked;
+          if (!confirm(`${dateLabel(selected)} に「${b.dataset.name}」を注文しますか?${usePoints ? '\n(ポイントを使います)' : ''}`)) return;
           try {
-            await api('/api/employee/orders', { method: 'POST', body: { date: selected, menu_item_id: Number(b.dataset.id) } });
+            await api('/api/employee/orders', { method: 'POST', body: { date: selected, menu_item_id: Number(b.dataset.id), use_points: usePoints } });
             toast('注文しました');
             refresh();
           } catch (e) { toast(e.message, true); }

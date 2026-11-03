@@ -19,6 +19,10 @@ export const DEFAULT_SETTINGS = {
   agency_fee_percent: 10, // 営業代行料(お店への支払いから差し引く)
   order_days_ahead: 14, // 何日先まで注文できるか
   shop_period_anchor: '2027-01-04', // お店への支払いの「2週間の区切り」の起点日(この日から14日ずつ)
+  points_enabled: 1, // ポイント還元を使う(1)/ 使わない(0)
+  point_per_use: 10, // 1回の利用でもらえるポイント
+  point_expiry_months: 12, // ポイントの有効期限(もらってから何か月)
+  point_max_per_order: 50, // 1回の注文で使えるポイントの上限
 };
 
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
@@ -32,7 +36,8 @@ const lcm = (a, b) => (a * b) / gcd(a, b);
  *   上限に達したら、それ以降は社員が全額負担。上限をまたぐ食事は「会社は残り分だけ、残りは社員」。
  * - 日付 → 番号 の順に上限を使っていく。
  *
- * @param {Array<{id:number, delivery_date:string, price:number, tax_rate?:number}>} orders
+ * - ポイントを使った注文(points_used)は、値段からポイント分を引いてから半分ずつにする。
+ * @param {Array<{id:number, delivery_date:string, price:number, tax_rate?:number, points_used?:number}>} orders
  *   tax_rate がない注文はお弁当の税率(s.tax_rate_percent)として扱う
  * @returns cap / used / remaining は「税抜き」の円。各注文の company_share / employee_share は実際に払う税込みの円
  */
@@ -47,12 +52,14 @@ export function allocateMonth(orders, s) {
   const rows = sorted.map((o) => {
     const rate = rateOf(o);
     const perYen = (100 * L) / (100 + rate); // 税込み1円が、税抜きで何単位か
-    const share = Math.floor((o.price * s.company_share_percent) / 100);
+    // ポイントを使った注文は、先にポイント分を引いた額を半分ずつにする(ポイント分は達磨商事が負担)
+    const base = o.price - (o.points_used || 0);
+    const share = Math.floor((base * s.company_share_percent) / 100);
     const room = Math.floor((capScaled - usedScaled) / perYen); // 上限の残りで出せる税込み額
     const company = Math.max(0, Math.min(share, room));
     usedScaled += company * perYen;
     companyTotal += company;
-    return { ...o, company_share: company, employee_share: o.price - company };
+    return { ...o, company_share: company, employee_share: base - company };
   });
   const used = Math.floor(usedScaled / L);
   const reached = capScaled - usedScaled < L; // 残りが税抜き1円未満

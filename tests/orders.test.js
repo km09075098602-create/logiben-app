@@ -99,3 +99,35 @@ test('だるまランチとお弁当は同じ上限(税抜7,500円)を使う', a
   assert.equal(r.month.remaining, 153);
   assert.equal(r.month.company_total, 14 * 550 + 375);
 });
+
+test('ポイント:お弁当の注文で使うと、残高から減り、半分ずつの計算に入る', async () => {
+  // 過去に5回利用(50ポイント)
+  for (const d of ['04', '05']) db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2027-01-${d}', 1, 1, '日替わり弁当', 540)`);
+  const before = (await dayMenu(db, user, '2027-01-07', s)).points;
+  assert.equal(before.balance, 20);
+  const r = await placeOrder(db, user, '2027-01-07', 1, s, 'web', true);
+  // 540円 − 20ポイント = 520円 → 会社260円・社員260円
+  assert.equal(r.order.points_used, 20);
+  assert.equal(r.order.company_share, 260);
+  assert.equal(r.order.employee_share, 260);
+  assert.equal((await employeeSummary(db, user, s)).points.balance, 0);
+  // 同じ日の注文を変更しても、ポイントを二重に使わない(戻してから数え直す)
+  const again = await placeOrder(db, user, '2027-01-07', 3, s, 'web', true);
+  assert.equal(again.order.points_used, 20);
+  // ポイントを使わないに変えると、残高が戻る
+  await placeOrder(db, user, '2027-01-07', 3, s, 'web', false);
+  assert.equal((await employeeSummary(db, user, s)).points.balance, 20);
+  // 注文を取り消しても残高は戻る
+  await placeOrder(db, user, '2027-01-07', 3, s, 'web', true);
+  await cancelOrder(db, user, '2027-01-07', s);
+  assert.equal((await employeeSummary(db, user, s)).points.balance, 20);
+});
+
+test('ポイント:だるまランチでも使える', async () => {
+  db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2027-01-05', 1, 1, '日替わり弁当', 540)`);
+  const r = await recordLunch(db, user, 2, s, 'web', true);
+  // 1,100円 − 10ポイント = 1,090円 → 会社545円・社員545円
+  assert.equal(r.used.points_used, 10);
+  assert.equal(r.used.company_share, 545);
+  assert.equal(r.used.employee_share, 545);
+});

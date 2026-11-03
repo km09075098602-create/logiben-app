@@ -69,6 +69,7 @@ CREATE TABLE orders (
   channel       TEXT NOT NULL DEFAULT 'web',
   kind          TEXT NOT NULL DEFAULT 'bento',
   tax_rate      INTEGER NOT NULL DEFAULT 8,
+  points_used   INTEGER NOT NULL DEFAULT 0, -- この注文で使ったポイント(先にお弁当代から引く。達磨商事が負担)
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (user_id, delivery_date, kind)

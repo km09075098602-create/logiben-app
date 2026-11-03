@@ -39,6 +39,7 @@ export function companyInvoices(orders, s) {
       company_share_bento: 0,
       company_share_lunch: 0,
       employee_share: 0,
+      points_used: 0, // 使われたポイント(先にお弁当代から引いた額。達磨商事がお店に払う)
       employees: [],
     }));
     const lunch = r.orders.filter((o) => o.kind === 'daruma_lunch');
@@ -53,6 +54,7 @@ export function companyInvoices(orders, s) {
       bento_total: sum(r.orders, 'price'),
       company_share: r.company_total,
       employee_share: sum(r.orders, 'employee_share'),
+      points_used: r.orders.reduce((a, o) => a + (o.points_used || 0), 0),
       reached_cap: r.reached,
     };
     c.employees.push(e);
@@ -64,6 +66,7 @@ export function companyInvoices(orders, s) {
     c.company_share_bento += sum(bento, 'company_share');
     c.company_share_lunch += sum(lunch, 'company_share');
     c.employee_share += e.employee_share;
+    c.points_used += e.points_used;
   }
   return [...companies.values()]
     .map((c) => {
@@ -113,6 +116,7 @@ export function shopPayments(orders, s) {
     const shop = getOrCreate(shops, o.shop_id, () => ({ shop_id: o.shop_id, shop_name: o.shop_name, meals: 0, meals_lunch: 0, bento_total: 0, items: new Map() }));
     shop.meals++;
     if (o.kind === 'daruma_lunch') shop.meals_lunch++;
+    shop.points_used = (shop.points_used || 0) + (o.points_used || 0); // うちポイント分(達磨商事が負担)
     shop.bento_total += o.price; // お食事代の合計(お弁当+だるまランチ)
     const item = getOrCreate(shop.items, `${o.kind}\t${o.item_name}\t${o.price}`, () => ({ item_name: o.item_name, price: o.price, kind: o.kind || 'bento', count: 0 }));
     item.count++;

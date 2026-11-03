@@ -149,9 +149,9 @@ app.get('/api/employee/menu', async (c) => {
 
 /** 注文する(同じ日にすでに注文があれば、お弁当を変更) */
 app.post('/api/employee/orders', async (c) => {
-  const { date, menu_item_id } = await c.req.json().catch(() => ({}));
+  const { date, menu_item_id, use_points } = await c.req.json().catch(() => ({}));
   const s = await loadSettings(c.env.DB);
-  await placeOrder(c.env.DB, c.get('user'), date, menu_item_id, s, 'web');
+  await placeOrder(c.env.DB, c.get('user'), date, menu_item_id, s, 'web', !!use_points);
   return c.json({ ok: true });
 });
 
@@ -170,9 +170,9 @@ app.get('/api/employee/lunch', async (c) => {
 
 /** だるまランチ:利用する(お店の人に画面を見せる) */
 app.post('/api/employee/lunch', async (c) => {
-  const { menu_item_id } = await c.req.json().catch(() => ({}));
+  const { menu_item_id, use_points } = await c.req.json().catch(() => ({}));
   const s = await loadSettings(c.env.DB);
-  return c.json(await recordLunch(c.env.DB, c.get('user'), menu_item_id, s, 'web'));
+  return c.json(await recordLunch(c.env.DB, c.get('user'), menu_item_id, s, 'web', !!use_points));
 });
 
 // ---------- 管理者用 ----------
