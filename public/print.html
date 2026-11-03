@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 印刷</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/print.css">
+  <style id="page-style"></style>
+</head>
+<body>
+  <header>
+    <div><h1>🍱 ロジ弁</h1><div class="who">管理画面(達磨商事)</div></div>
+    <nav class="nav">
+      <a href="/admin.html">注文数</a>
+      <a href="/manage.html">登録</a>
+      <a href="/print.html" class="active">印刷</a>
+      <button type="button" id="logout">ログアウト</button>
+    </nav>
+  </header>
+  <main>
+    <div class="no-print">
+      <div class="tabs">
+        <button type="button" data-mode="labels" class="active">名前シール</button>
+        <button type="button" data-mode="delivery">配達表</button>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div><label for="date">お届け日</label><input type="date" id="date"></div>
+          <div><label for="shop">お店</label><select id="shop"><option value="">すべてのお店</option></select></div>
+          <div><label for="company">会社</label><select id="company"><option value="">すべての会社</option></select></div>
+        </div>
+
+        <!-- 名前シールだけの設定 -->
+        <div id="label-options">
+          <div class="row">
+            <div><label for="preset">ラベル用紙</label><select id="preset"></select></div>
+            <div style="flex:0 1 140px"><label for="start">何枚目から印刷</label><input id="start" type="number" min="1" value="1"></div>
+          </div>
+          <details style="margin-top:10px">
+            <summary class="sub">位置の微調整(印刷がずれるとき)</summary>
+            <div class="row">
+              <div><label for="offset-x">右へずらす(mm・左はマイナス)</label><input id="offset-x" type="number" step="0.5" value="0"></div>
+              <div><label for="offset-y">下へずらす(mm・上はマイナス)</label><input id="offset-y" type="number" step="0.5" value="0"></div>
+            </div>
+            <label class="check" style="margin-top:10px"><input type="checkbox" id="outline"> ラベルの枠を印刷する(試し刷り用)</label>
+            <p class="sub" style="margin-bottom:0">最初は普通の紙に枠付きで試し刷りし、ラベル用紙に重ねて位置を確かめるのがおすすめです。印刷するときは、印刷画面の「倍率」を<b>100%(実際のサイズ)</b>に、「余白」を<b>なし</b>にしてください。</p>
+          </details>
+        </div>
+
+        <p style="margin-bottom:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" id="print">印刷する</button>
+          <span class="sub" id="count"></span>
+        </p>
+      </div>
+    </div>
+
+    <div id="preview"></div>
+  </main>
+
+  <script type="module">
+    import { api, dateLabel, esc, logout, toast } from '/common.js';
+    import { LABEL_PRESETS } from '/labels.js';
+
+    document.getElementById('logout').onclick = logout;
+    const $ = (id) => document.getElementById(id);
+
+    // ---------- 前回の設定を覚えておく(このパソコンのブラウザだけ) ----------
+    const SAVE_KEY = 'logiben-print';
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch {}
+    const save = () => {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ preset: $('preset').value, offsetX: $('offset-x').value, offsetY: $('offset-y').value }));
+      } catch {}
+    };
+
+    let mode = 'labels';
+    let data = null;
+
+    $('preset').innerHTML = Object.entries(LABEL_PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.name)}</option>`).join('');
+    if (saved.preset in LABEL_PRESETS) $('preset').value = saved.preset;
+    $('offset-x').value = saved.offsetX || 0;
+    $('offset-y').value = saved.offsetY || 0;
+
+    // 初期の日付:今日(日本時間)
+    $('date').value = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.addEventListener('click', () => {
+        mode = b.dataset.mode;
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        render();
+      })
+    );
+    $('date').onchange = load;
+    for (const id of ['shop', 'company', 'preset', 'start', 'offset-x', 'offset-y', 'outline']) $(id).addEventListener('input', () => { save(); render(); });
+    $('print').onclick = () => {
+      if (!filtered().length) return toast('印刷するお弁当がありません', true);
+      print();
+    };
+    window.addEventListener('resize', fitPreview);
+
+    async function load() {
+      data = await api('/api/admin/orders?date=' + $('date').value);
+      // 絞り込みの選択肢を、その日の注文から作る
+      const fill = (sel, pairs) => {
+        const keep = sel.value;
+        sel.innerHTML = sel.options[0].outerHTML + pairs.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('');
+        if (pairs.some(([v]) => String(v) === keep)) sel.value = keep;
+      };
+      const uniq = (key, name) => [...new Map(data.orders.map((o) => [o[key], o[name]])).entries()];
+      fill($('shop'), uniq('shop_id', 'shop_name'));
+      fill($('company'), uniq('company_id', 'company_name'));
+      render();
+    }
+
+    /** 絞り込み後の注文(会社 → 部署 → 名前 の順) */
+    function filtered() {
+      if (!data) return [];
+      const shop = $('shop').value;
+      const company = $('company').value;
+      return data.orders
+        .filter((o) => (!shop || String(o.shop_id) === shop) && (!company || String(o.company_id) === company))
+        .sort((a, b) =>
+          a.company_id - b.company_id ||
+          (a.department || '').localeCompare(b.department || '', 'ja') ||
+          a.user_name.localeCompare(b.user_name, 'ja')
+        );
+    }
+
+    function render() {
+      $('label-options').hidden = mode !== 'labels';
+      const orders = filtered();
+      $('count').textContent = `${dateLabel($('date').value)}:${orders.length}食`;
+      if (!orders.length) {
+        $('preview').innerHTML = '<p class="sub">この日(この条件)の注文はありません。</p>';
+        $('page-style').textContent = '';
+        return;
+      }
+      if (mode === 'labels') renderLabels(orders);
+      else renderDelivery(orders);
+      fitPreview();
+    }
+
+    // ================= 名前シール =================
+    function renderLabels(orders) {
+      const p = LABEL_PRESETS[$('preset').value];
+      const perSheet = p.cols * p.rows;
+      const start = Math.min(Math.max(1, Number($('start').value) || 1), perSheet) - 1;
+      const dx = Number($('offset-x').value) || 0;
+      const dy = Number($('offset-y').value) || 0;
+      const outline = $('outline').checked;
+      const date = dateLabel($('date').value);
+
+      // 用紙ごとに分ける(1枚目は「何枚目から」の分だけ空ける)
+      const cells = [...Array(start).fill(null), ...orders];
+      const sheets = [];
+      for (let i = 0; i < cells.length; i += perSheet) sheets.push(cells.slice(i, i + perSheet));
+
+      // 名前が長いときは文字を小さくする
+      const nameSize = (name) => (name.length <= 6 ? 0.2 : name.length <= 9 ? 0.16 : 0.12);
+
+      $('preview').innerHTML = sheets
+        .map(
+          (cellsOnSheet, si) => `<div class="sheet" aria-label="${si + 1}枚目">
+          ${cellsOnSheet
+            .map((o, i) => {
+              if (!o) return '';
+              const col = i % p.cols;
+              const row = Math.floor(i / p.cols);
+              const x = p.left + col * (p.width + p.gapX) + dx;
+              const y = p.top + row * (p.height + p.gapY) + dy;
+              return `<div class="label ${outline ? 'outline' : ''}" style="left:${x}mm;top:${y}mm;width:${p.width}mm;height:${p.height}mm;--h:${p.height}mm">
+                <div class="l-company">${esc(o.company_name)}</div>
+                <div class="l-name" style="font-size:calc(var(--h) * ${nameSize(o.user_name)})">${esc(o.user_name)}<small> 様</small></div>
+                <div class="l-dept">${esc(o.department || '')}</div>
+                <div class="l-item">${esc(o.item_name)}</div>
+                <div class="l-meta">${date} ${esc(o.shop_name)}</div>
+              </div>`;
+            })
+            .join('')}
+        </div>`
+        )
+        .join('');
+      $('count').textContent += `(用紙 ${sheets.length}枚)`;
+      // ラベル用紙はプリンターの余白なしで印刷する
+      $('page-style').textContent = '@page { size: A4 portrait; margin: 0; }';
+    }
+
+    // ================= 配達表(会社ごとに1ページ) =================
+    function renderDelivery(orders) {
+      const byCompany = new Map();
+      for (const o of orders) {
+        if (!byCompany.has(o.company_id)) byCompany.set(o.company_id, { name: o.company_name, orders: [] });
+        byCompany.get(o.company_id).orders.push(o);
+      }
+      const shop = $('shop').value ? $('shop').selectedOptions[0].textContent : '';
+      $('preview').innerHTML = [...byCompany.values()]
+        .map((c) => {
+          // お弁当ごとの数
+          const items = new Map();
+          for (const o of c.orders) items.set(o.item_name, (items.get(o.item_name) || 0) + 1);
+          // 部署ごと
+          const depts = new Map();
+          for (const o of c.orders) {
+            const d = o.department || '(部署なし)';
+            if (!depts.has(d)) depts.set(d, []);
+            depts.get(d).push(o);
+          }
+          return `<div class="page">
+            <div class="d-head">
+              <div><div class="sub">配達表 ${dateLabel($('date').value)}${shop ? ' ・ ' + esc(shop) : ''}</div>
+                <div class="d-company">${esc(c.name)} 様</div></div>
+              <div class="d-total">${c.orders.length}<small>食</small></div>
+            </div>
+            <table class="d-items">
+              <tr>${[...items].map(([name, n]) => `<th>${esc(name)}</th>`).join('')}</tr>
+              <tr>${[...items].map(([name, n]) => `<td>${n}</td>`).join('')}</tr>
+            </table>
+            ${[...depts]
+              .map(
+                ([dept, list]) => `<h3>${esc(dept)}(${list.length}食)</h3>
+                <table class="d-list">
+                  <tr><th style="width:2.2em">✓</th><th>名前</th><th>お弁当</th><th>お店</th></tr>
+                  ${list.map((o) => `<tr><td class="box">□</td><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td><td>${esc(o.shop_name)}</td></tr>`).join('')}
+                </table>`
+              )
+              .join('')}
+            <p class="d-sign">受け取り確認:__________________</p>
+          </div>`;
+        })
+        .join('');
+      $('page-style').textContent = '@page { size: A4 portrait; margin: 12mm; }';
+    }
+
+    /** 画面の幅に合わせて、プレビューを縮小表示する(印刷には影響しない) */
+    function fitPreview() {
+      const width = $('preview').clientWidth;
+      const zoom = Math.min(1, width / (210 * 96 / 25.4));
+      document.documentElement.style.setProperty('--preview-zoom', zoom);
+    }
+
+    const me = await api('/api/me');
+    if (me.role !== 'admin') location.href = '/';
+    load();
+  </script>
+</body>
+</html>

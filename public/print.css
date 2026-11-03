@@ -1,0 +1,68 @@
+/* 印刷画面(名前シール・配達表)のデザイン */
+
+/* ---------- 名前シール ---------- */
+.sheet {
+  position: relative;
+  width: 210mm;
+  height: 297mm;
+  background: #fff;
+  margin: 0 auto 16px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .18);
+  overflow: hidden;
+  zoom: var(--preview-zoom, 1);
+}
+.label {
+  position: absolute;
+  box-sizing: border-box;
+  padding: calc(var(--h) * .08) 4mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--h) * .02);
+  overflow: hidden;
+  color: #000;
+  line-height: 1.2;
+}
+.label.outline { outline: .2mm dashed #999; outline-offset: -.1mm; }
+.label > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l-company { font-size: calc(var(--h) * .085); }
+.l-name { font-weight: 700; }
+.l-name small { font-size: .55em; font-weight: 400; }
+.l-dept { font-size: calc(var(--h) * .1); }
+.l-item { font-size: calc(var(--h) * .11); font-weight: 700; border-top: .3mm solid #000; padding-top: calc(var(--h) * .03); }
+.l-meta { font-size: calc(var(--h) * .075); color: #333; }
+
+/* 画面ではプレビューを横にスクロールさせない */
+#preview { overflow: hidden; }
+
+/* ---------- 配達表 ---------- */
+.page {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  color: #000;
+}
+.d-head { display: flex; justify-content: space-between; align-items: end; border-bottom: 2px solid #000; padding-bottom: 6px; }
+.d-company { font-size: 1.4rem; font-weight: 700; }
+.d-total { font-size: 2rem; font-weight: 700; }
+.d-total small { font-size: 1rem; }
+.page h3 { font-size: 1rem; margin: 14px 0 4px; }
+.page table { border: 1px solid #000; }
+.page th, .page td { border: 1px solid #000; padding: 5px 8px; color: #000; }
+.d-items { margin-top: 10px; width: auto; }
+.d-items td { text-align: center; font-weight: 700; font-size: 1.1rem; }
+.d-list td.box { text-align: center; }
+.d-sign { text-align: right; margin-top: 18px; }
+
+@media print {
+  main { padding: 0; max-width: none; }
+  #preview { overflow: visible; }
+  .sheet { zoom: 1; margin: 0; box-shadow: none; page-break-after: always; break-after: page; }
+  .sheet:last-child { page-break-after: auto; break-after: auto; }
+  .page { border: none; border-radius: 0; padding: 0; margin: 0; page-break-after: always; break-after: page; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .page tr { break-inside: avoid; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

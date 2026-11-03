@@ -229,7 +229,7 @@ app.get('/api/admin/orders', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT o.id, o.item_name, o.price, o.channel, o.updated_at,
             s.id AS shop_id, s.name AS shop_name,
-            u.name AS user_name, u.department, co.name AS company_name
+            u.name AS user_name, u.department, co.id AS company_id, co.name AS company_name
      FROM orders o
      JOIN shops s ON s.id = o.shop_id
      JOIN users u ON u.id = o.user_id
