@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS = {
   shop_period_anchor: '2027-01-04', // お店への支払いの「2週間の区切り」の起点日(この日から14日ずつ)
   points_enabled: 1, // ポイント還元を使う(1)/ 使わない(0)
   point_per_use: 20, // 1回の利用でもらえるポイント
-  point_grant_delay_months: 1, // その月の利用分のポイントを、何か月後の1日にもらえるか(1=翌月1日)
+  point_grant_delay_months: 1, // その月の利用分のポイントを、何か月後の給料日の翌日にもらえるか(1=翌月。給料日は会社ごと)
   point_expiry_months: 12, // ポイントの有効期限(もらってから何か月)
   point_max_per_order: 50, // 1回の注文で使えるポイントの上限
 };

@@ -88,10 +88,10 @@ const orderSql = (uid, item, dateExpr, extraWhere = '') =>
 for (let day = 0; day < 31; day++) {
   lines.push(orderSql(2, menu[5], `${jst}, 'start of month', '+${day} days')`, ` AND strftime('%m', d) = strftime('%m', ${jst}))`));
 }
-// 先月の利用(ポイントは今月1日にもらえている状態になる):山田さん・佐藤さん・鈴木さんが何回か利用
-for (const [uid, days] of [[2, [6, 7, 8]], [3, [6, 13]], [4, [9]]]) {
+// 2か月前の利用(ポイントは先月の給料日の翌日にもらえている状態になる):山田さん・佐藤さん・鈴木さんが何回か利用
+for (const [uid, days] of [[2, [6, 7, 8]], [3, [6, 13]], [4, [9, 10]]]) {
   for (const day of days) {
-    lines.push(orderSql(uid, menu[0], `${jst}, 'start of month', '-1 month', '+${day} days')`));
+    lines.push(orderSql(uid, menu[0], `${jst}, 'start of month', '-2 months', '+${day} days')`));
   }
 }
 // ほかの社員:今日から2週間ぶん、ところどころ注文した状態

@@ -35,7 +35,9 @@ export async function pointsOf(db, userId, s, exclude = null) {
     .bind(userId)
     .all();
   const rows = exclude ? results.filter((o) => !(o.delivery_date === exclude.date && o.kind === exclude.kind)) : results;
-  return { ...pointBalance(rows, s, todayJST()), enabled: !!s.points_enabled, max_per_order: s.point_max_per_order, per_use: s.point_per_use };
+  // 会社の給料日(ポイントは給料日の翌日にもらえる)
+  const company = await db.prepare('SELECT c.payday FROM users u JOIN companies c ON c.id = u.company_id WHERE u.id = ?').bind(userId).first();
+  return { ...pointBalance(rows, s, todayJST(), company?.payday ?? 25), enabled: !!s.points_enabled, max_per_order: s.point_max_per_order, per_use: s.point_per_use };
 }
 
 /** 今月の利用状況(会社負担の使用額・残り・お知らせ)と、注文できる日 */

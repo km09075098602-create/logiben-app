@@ -39,6 +39,7 @@
       <form class="card row" id="add-company">
         <div style="flex:0 1 140px"><label for="new-company-code">会社コード</label><input id="new-company-code" placeholder="例:MT01" required></div>
         <div><label for="new-company-name">会社名</label><input id="new-company-name" placeholder="例:松江テック株式会社" required></div>
+        <div style="flex:0 1 110px"><label for="new-company-payday">給料日</label><input id="new-company-payday" type="number" min="1" max="31" value="25"></div>
         <div style="flex:0 0 auto"><button type="submit">会社を追加</button></div>
       </form>
 
@@ -213,7 +214,8 @@
       e.preventDefault();
       const code = document.getElementById('new-company-code');
       const name = document.getElementById('new-company-name');
-      const r = await run(() => api('/api/admin/companies', { method: 'POST', body: { code: code.value, name: name.value } }), '会社を追加しました');
+      const payday = document.getElementById('new-company-payday');
+      const r = await run(() => api('/api/admin/companies', { method: 'POST', body: { code: code.value, name: name.value, payday: payday.value } }), '会社を追加しました');
       if (r) {
         code.value = name.value = '';
         loadCompanies(r.id);
@@ -226,9 +228,9 @@
       document.getElementById('company').innerHTML = `
         <div class="card ${c.active ? '' : 'inactive'}">
           <div class="row" style="align-items:center">
-            <div><span class="shop-name">${esc(c.name)}</span> <span class="sub">会社コード ${esc(c.code)}</span> ${badge(c.active)}</div>
+            <div><span class="shop-name">${esc(c.name)}</span> <span class="sub">会社コード ${esc(c.code)} ・ 給料日 毎月${c.payday === 31 ? '末日' : c.payday + '日'}</span> ${badge(c.active)}</div>
             <div style="flex:0 0 auto;display:flex;gap:6px">
-              <button type="button" class="secondary small" data-act="edit-company">会社名・コードを変える</button>
+              <button type="button" class="secondary small" data-act="edit-company">会社名・コード・給料日を変える</button>
               <button type="button" class="secondary small" data-act="toggle-company">${c.active ? '停止' : '再開'}</button>
             </div>
           </div>
@@ -374,12 +376,14 @@
           if (!name) return;
           const code = prompt('会社コード(社員がログインに使います)', c.code);
           if (!code) return;
-          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name, code, active: c.active } }), '変更しました')) loadCompanies(c.id);
+          const payday = prompt('給料日(1〜31。月末なら31。社員のポイントはこの翌日にもらえます)', c.payday);
+          if (!payday) return;
+          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name, code, payday, active: c.active } }), '変更しました')) loadCompanies(c.id);
           break;
         }
         case 'toggle-company':
           if (c.active && !confirm(`「${c.name}」を停止しますか?\nこの会社の社員は全員ログインできなくなります。`)) return;
-          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name: c.name, code: c.code, active: !c.active } }), c.active ? '停止しました' : '再開しました')) loadCompanies(c.id);
+          if (await run(() => api(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { name: c.name, code: c.code, payday: c.payday, active: !c.active } }), c.active ? '停止しました' : '再開しました')) loadCompanies(c.id);
           break;
         case 'edit-emp':
           tr.outerHTML = employeeEditRow(emp);

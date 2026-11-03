@@ -30,6 +30,9 @@ function code(value, label) {
   return v;
 }
 
+/** 給料日(1〜31。なければ25日。31にすると「月末」) */
+const paydayOf = (b) => (b.payday === undefined || b.payday === null || b.payday === '' ? 25 : int(b.payday, '給料日', { min: 1, max: 31 }));
+
 const flag = (v) => (v === false || v === 0 || v === '0' ? 0 : 1);
 
 /** 配りやすい初期パスワード(紛らわしい 0/O/1/l/I は使わない) */
@@ -117,7 +120,7 @@ export function registerMasterRoutes(app) {
 
   app.get('/api/admin/companies', async (c) => {
     const { results } = await c.env.DB.prepare(
-      `SELECT c.id, c.code, c.name, c.active,
+      `SELECT c.id, c.code, c.name, c.active, c.payday,
               (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id AND u.role = 'employee' AND u.active = 1) AS employee_count
        FROM companies c ORDER BY c.active DESC, c.id`
     ).all();
@@ -126,16 +129,16 @@ export function registerMasterRoutes(app) {
 
   app.post('/api/admin/companies', async (c) => {
     const b = await body(c);
-    const r = await c.env.DB.prepare('INSERT INTO companies (code, name) VALUES (?, ?)')
-      .bind(code(b.code, '会社コード').toUpperCase(), text(b.name, '会社名'))
+    const r = await c.env.DB.prepare('INSERT INTO companies (code, name, payday) VALUES (?, ?, ?)')
+      .bind(code(b.code, '会社コード').toUpperCase(), text(b.name, '会社名'), paydayOf(b))
       .run();
     return c.json({ id: r.meta.last_row_id });
   });
 
   app.put('/api/admin/companies/:id', async (c) => {
     const b = await body(c);
-    await c.env.DB.prepare('UPDATE companies SET code = ?, name = ?, active = ? WHERE id = ?')
-      .bind(code(b.code, '会社コード').toUpperCase(), text(b.name, '会社名'), flag(b.active), id(c))
+    await c.env.DB.prepare('UPDATE companies SET code = ?, name = ?, active = ?, payday = ? WHERE id = ?')
+      .bind(code(b.code, '会社コード').toUpperCase(), text(b.name, '会社名'), flag(b.active), paydayOf(b), id(c))
       .run();
     return c.json({ ok: true });
   });

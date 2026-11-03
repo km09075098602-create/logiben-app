@@ -101,13 +101,13 @@ test('だるまランチとお弁当は同じ上限(税抜7,500円)を使う', a
 });
 
 test('ポイント:お弁当の注文で使うと、残高から減り、半分ずつの計算に入る', async () => {
-  // 先月(12月)に2回利用 → 1月1日に40ポイントもらっている
-  for (const d of ['14', '15']) db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2026-12-${d}', 1, 1, '日替わり弁当', 540)`);
-  // 今月(1月)の利用分は、まだもらえない(2月1日にもらえる)
+  // 11月に2回利用 → 12月の給料日(25日・金)の翌日 12/26 に40ポイントもらっている
+  for (const d of ['16', '17']) db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2026-11-${d}', 1, 1, '日替わり弁当', 540)`);
+  // 今月(1月)の利用分は、まだもらえない(2月の給料日の翌日 2/26 にもらえる)
   db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2027-01-05', 1, 1, '日替わり弁当', 540)`);
   const before = (await dayMenu(db, user, '2027-01-07', s)).points;
   assert.equal(before.balance, 40);
-  assert.deepEqual(before.pending, [{ date: '2027-02-01', amount: 20 }]);
+  assert.deepEqual(before.pending, [{ date: '2027-02-26', amount: 20 }]);
   const r = await placeOrder(db, user, '2027-01-07', 1, s, 'web', true);
   // 540円 − 40ポイント = 500円 → 会社250円・社員250円
   assert.equal(r.order.points_used, 40);
@@ -127,10 +127,21 @@ test('ポイント:お弁当の注文で使うと、残高から減り、半分�
 });
 
 test('ポイント:だるまランチでも使える', async () => {
-  db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2026-12-14', 1, 1, '日替わり弁当', 540)`);
+  db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2026-11-16', 1, 1, '日替わり弁当', 540)`);
   const r = await recordLunch(db, user, 2, s, 'web', true);
   // 1,100円 − 20ポイント = 1,080円 → 会社540円・社員540円
   assert.equal(r.used.points_used, 20);
   assert.equal(r.used.company_share, 540);
   assert.equal(r.used.employee_share, 540);
+});
+
+test('ポイント:会社の給料日を変えると、もらえる日も変わる', async () => {
+  db.raw.exec(`INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) VALUES (1, '2026-12-14', 1, 1, '日替わり弁当', 540)`);
+  // 給料日25日:12月分は 1/25(月)の翌日 1/26 → まだ(今日は1/6)
+  assert.deepEqual((await employeeSummary(db, user, s)).points.pending, [{ date: '2027-01-26', amount: 20 }]);
+  // 給料日5日に変更:12月分は 1/5(火)の翌日 1/6 → もうもらえている
+  db.raw.exec(`UPDATE companies SET payday = 5`);
+  const p = (await employeeSummary(db, user, s)).points;
+  assert.equal(p.balance, 20);
+  assert.deepEqual(p.pending, []);
 });
