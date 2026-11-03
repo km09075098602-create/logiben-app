@@ -35,10 +35,14 @@ export async function renderClosedDays(el, { base, shopId = null, showHolidays =
       let res = await api(base, { method: 'POST', body });
       if (res.needs_confirm) {
         // その日にすでに注文が入っている
-        if (!confirm(`${dateLabel(body.date)} にはすでに ${res.count}件 の注文が入っています。\n休業日にすると、これらの注文は取り消されます。よろしいですか?\n(取り消したことは社員の方に別途お知らせください)`)) return;
+        if (!confirm(`${dateLabel(body.date)} にはすでに ${res.count}件 の注文が入っています。\n休業日にすると、これらの注文は取り消されます。よろしいですか?\n(LINE連携している社員にはLINEでお知らせします。それ以外の方には別途お知らせください)`)) return;
         res = await api(base, { method: 'POST', body: { ...body, force: true } });
       }
-      toast(res.cancelled ? `休業日を追加しました(注文 ${res.cancelled}件を取り消しました)` : '休業日を追加しました');
+      toast(
+        res.cancelled
+          ? `休業日を追加しました(注文 ${res.cancelled}件を取り消し、うち ${res.notified}人にLINEでお知らせしました)`
+          : '休業日を追加しました'
+      );
       renderClosedDays(el, { base, shopId, showHolidays });
     } catch (err) {
       toast(err.message, true);

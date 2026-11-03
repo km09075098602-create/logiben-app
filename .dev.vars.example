@@ -1,0 +1,7 @@
+# 自分のパソコンで動かすときの設定(このファイルを .dev.vars という名前でコピーして使う)
+# 本番(Cloudflare)では、npx wrangler secret put LINE_CHANNEL_SECRET などで設定する
+LINE_CHANNEL_SECRET=ここにチャネルシークレット
+LINE_CHANNEL_ACCESS_TOKEN=ここにチャネルアクセストークン
+LINE_FRIEND_URL=https://lin.ee/xxxxxxx
+# テスト用:LINEのかわりに偽物のサーバーへ送る(普段は書かない)
+# LINE_API_BASE=http://127.0.0.1:8789

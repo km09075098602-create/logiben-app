@@ -19,6 +19,9 @@
     <div class="dates" id="dates"></div>
 
     <div id="day"></div>
+
+    <!-- LINE連携(LINE公式アカウントの設定がされているときだけ表示) -->
+    <div id="line" style="margin-top:24px"></div>
   </main>
 
   <script type="module">
@@ -48,6 +51,7 @@
           </div>
           <div class="sub">今月の注文 ${s.orders.length}食 ・ あなたのお支払い 合計 ${yen(myTotal)}</div>
         </div>`;
+      renderLine(s);
       const ordered = new Set(s.orders.map((o) => o.delivery_date));
       if (!selected) selected = (s.dates.find((d) => d.open) || s.dates[0])?.date;
       document.getElementById('dates').innerHTML = s.dates
@@ -118,6 +122,39 @@
           refresh();
         } catch (e) { toast(e.message, true); }
       });
+    }
+
+    /** LINEで注文するための連携 */
+    function renderLine(s) {
+      const el = document.getElementById('line');
+      if (!s.line_enabled) return (el.innerHTML = '');
+      if (s.line_linked) {
+        el.innerHTML = `<div class="card"><b>LINEと連携済みです ✓</b>
+          <p class="sub" style="margin:4px 0 8px">LINEのロジ弁公式アカウントから、注文・確認・取り消しができます。</p>
+          <button type="button" class="secondary small" id="line-unlink">連携を解除する</button></div>`;
+        document.getElementById('line-unlink').onclick = async () => {
+          if (!confirm('LINEとの連携を解除しますか?')) return;
+          await api('/api/employee/line', { method: 'DELETE' });
+          toast('連携を解除しました');
+          loadSummary();
+        };
+        return;
+      }
+      el.innerHTML = `<div class="card"><b>LINEでも注文できます</b>
+        <ol class="sub" style="padding-left:1.3em;margin:6px 0">
+          <li>${s.line_friend_url ? `<a href="${esc(s.line_friend_url)}" target="_blank" rel="noopener">ロジ弁のLINE公式アカウント</a>` : 'ロジ弁のLINE公式アカウント'}を友だち追加する</li>
+          <li>下のボタンで連携コード(6けた)を出す</li>
+          <li>そのコードをLINEのトークに送る</li>
+        </ol>
+        <div id="line-code"><button type="button" id="line-issue">連携コードを出す</button></div></div>`;
+      document.getElementById('line-issue').onclick = async () => {
+        try {
+          const r = await api('/api/employee/line-code', { method: 'POST' });
+          document.getElementById('line-code').innerHTML = `<div class="sub">連携コード(${r.minutes}分間有効)</div>
+            <div style="font-size:2rem;font-weight:700;letter-spacing:.2em">${r.code}</div>
+            <p class="sub" style="margin:4px 0 0">LINEのトークにこの数字を送ってください。送ったあと、この画面を開き直すと「連携済み」になります。</p>`;
+        } catch (e) { toast(e.message, true); }
+      };
     }
 
     async function refresh() {

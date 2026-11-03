@@ -7,6 +7,7 @@
 import { todayJST, addDays } from './rules.js';
 import { holidaysBetween } from './holidays.js';
 import { InputError } from './master.js';
+import { pushToUsers, dateLabel } from './line.js';
 
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
@@ -26,7 +27,8 @@ async function listClosed(db, shopId) {
  * 休業日を追加する。
  * その日にすでに注文があるときは、force(取り消してよい)がない限り追加せず、件数を返す。
  */
-async function addClosed(db, { shopId, date, note, force }) {
+async function addClosed(env, { shopId, date, note, force }) {
+  const db = env.DB;
   if (!isDate(date)) throw new InputError('日付を正しく入力してください');
   if (date < todayJST()) throw new InputError('過ぎた日は休業日にできません');
   const memo = String(note ?? '').trim().slice(0, 30);
@@ -42,12 +44,27 @@ async function addClosed(db, { shopId, date, note, force }) {
     .first();
   if (n && !force) return { needs_confirm: true, count: n };
 
+  // 取り消す注文(LINE連携している社員にはお知らせを送るため、先に控えておく)
+  const { results: affected } = n
+    ? await db
+        .prepare(`SELECT user_id, item_name FROM orders WHERE delivery_date = ?1 AND (?2 IS NULL OR shop_id = ?2)`)
+        .bind(date, shopId)
+        .all()
+    : { results: [] };
+
   const stmts = [];
   // 注文は削除する(社員の画面からも消える)。社員へのお知らせは今後の課題
   if (n) stmts.push(db.prepare(`DELETE FROM orders WHERE delivery_date = ?1 AND (?2 IS NULL OR shop_id = ?2)`).bind(date, shopId));
   stmts.push(db.prepare('INSERT INTO closed_days (shop_id, date, note) VALUES (?, ?, ?)').bind(shopId, date, memo));
   await db.batch(stmts);
-  return { ok: true, cancelled: n };
+
+  const reason = memo || (shopId ? 'お店の休業日' : '休業日');
+  const notified = await pushToUsers(
+    env,
+    db,
+    new Map(affected.map((o) => [o.user_id, `【ロジ弁】${dateLabel(date)}は${reason}のため、ご注文(${o.item_name})を取り消しました。ご迷惑をおかけします。`]))
+  );
+  return { ok: true, cancelled: n, notified };
 }
 
 /** 祝日の一覧(今日から1年先まで・参考表示用) */
@@ -69,7 +86,7 @@ export function registerClosedDayRoutes(app) {
 
   app.post('/api/admin/closed-days', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    return c.json(await addClosed(c.env.DB, { ...b, shopId: optionalShopId(b.shop_id) }));
+    return c.json(await addClosed(c.env, { ...b, shopId: optionalShopId(b.shop_id) }));
   });
 
   app.delete('/api/admin/closed-days/:id', async (c) => {
@@ -89,7 +106,7 @@ export function registerClosedDayRoutes(app) {
 
   app.post('/api/shop/closed-days', async (c) => {
     const b = await c.req.json().catch(() => ({}));
-    return c.json(await addClosed(c.env.DB, { ...b, shopId: c.get('user').shop_id }));
+    return c.json(await addClosed(c.env, { ...b, shopId: c.get('user').shop_id }));
   });
 
   app.delete('/api/shop/closed-days/:id', async (c) => {

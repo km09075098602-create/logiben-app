@@ -5,6 +5,7 @@
 //   /api/employee/… 社員用
 //   /api/admin/…    管理者用(登録画面のAPIは src/master.js)
 //   /api/company/… 会社の担当者用、/api/shop/… お店用(src/portal-routes.js)
+//   /api/line/webhook LINEから届くメッセージ(src/line.js)
 // =============================================================
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -13,37 +14,17 @@ import { registerMasterRoutes } from './master.js';
 import { registerBillingRoutes } from './billing-routes.js';
 import { loadSettings } from './settings.js';
 import { dayOrders } from './queries.js';
+import { employeeSummary, dayMenu, placeOrder, cancelOrder } from './orders.js';
 import { registerPortalRoutes } from './portal-routes.js';
 import { registerClosedDayRoutes } from './closed-days.js';
-import {
-  DEFAULT_SETTINGS,
-  allocateMonth,
-  previewShare,
-  isOrderOpen,
-  orderableDates,
-  deadlineFor,
-  closedReason,
-  todayJST,
-} from './rules.js';
+import { registerLineRoutes } from './line.js';
+import { DEFAULT_SETTINGS, deadlineFor, closedReason } from './rules.js';
 
 const app = new Hono();
 const SESSION_DAYS = 30;
 
 // ---------- 共通の部品 ----------
 
-
-/** ある社員の、ある月(YYYY-MM)の注文 */
-async function monthOrders(db, userId, month) {
-  const { results } = await db
-    .prepare(
-      `SELECT o.id, o.delivery_date, o.price, o.item_name, s.name AS shop_name
-       FROM orders o JOIN shops s ON s.id = o.shop_id
-       WHERE o.user_id = ? AND o.kind = 'bento' AND substr(o.delivery_date, 1, 7) = ?`
-    )
-    .bind(userId, month)
-    .all();
-  return results;
-}
 
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 const fail = (c, status, message) => c.json({ error: message }, status);
@@ -142,100 +123,39 @@ app.get('/api/me', (c) => {
 
 app.use('/api/employee/*', requireRole('employee'));
 
-/** 注文できる日の一覧と、今月の利用状況 */
+/** 注文できる日の一覧と、今月の利用状況(LINE連携の状態も) */
 app.get('/api/employee/summary', async (c) => {
   const db = c.env.DB;
   const user = c.get('user');
   const s = await loadSettings(db);
-  const month = c.req.query('month') || todayJST().slice(0, 7);
-  const r = allocateMonth(await monthOrders(db, user.id, month), s);
+  const summary = await employeeSummary(db, user, s, c.req.query('month') || undefined);
+  const line = await db.prepare('SELECT line_user_id FROM users WHERE id = ?').bind(user.id).first();
   return c.json({
-    month,
-    dates: orderableDates(s),
-    cap: r.cap,
-    used: r.used,
-    remaining: r.remaining,
-    warn: r.warn,
-    reached: r.reached,
-    warn_percent: s.warn_percent,
-    orders: r.orders,
+    ...summary,
+    line_linked: !!line?.line_user_id,
+    line_enabled: !!c.env.LINE_CHANNEL_SECRET, // LINE公式アカウントとつながっているか
+    line_friend_url: c.env.LINE_FRIEND_URL || null, // 友だち追加のURL
   });
 });
 
 /** ある日のメニュー(自分の支払い見込み付き)と、その日の自分の注文 */
 app.get('/api/employee/menu', async (c) => {
-  const db = c.env.DB;
-  const user = c.get('user');
-  const date = c.req.query('date');
-  if (!isDate(date)) return fail(c, 400, '日付が正しくありません');
-  const s = await loadSettings(db);
-  const orders = await monthOrders(db, user.id, date.slice(0, 7));
-  const { results: items } = await db
-    .prepare(
-      `SELECT m.id, m.name, m.description, m.price, s.id AS shop_id, s.name AS shop_name
-       FROM menu_items m JOIN shops s ON s.id = m.shop_id
-       WHERE m.active = 1 AND s.active = 1
-         AND s.id NOT IN (SELECT shop_id FROM closed_days WHERE date = ? AND shop_id IS NOT NULL) -- その日休みのお店は出さない
-       ORDER BY s.id, m.price`
-    )
-    .bind(date)
-    .all();
-  const current = await db
-    .prepare(`SELECT id, menu_item_id, item_name, price FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`)
-    .bind(user.id, date)
-    .first();
-  const allocated = allocateMonth(orders, s).orders.find((o) => current && o.id === current.id);
-  return c.json({
-    date,
-    open: isOrderOpen(date, s),
-    closed_reason: closedReason(date, s),
-    shops_closed: (
-      await db.prepare('SELECT s.name FROM closed_days d JOIN shops s ON s.id = d.shop_id WHERE d.date = ? AND s.active = 1').bind(date).all()
-    ).results.map((r) => r.name), // この日お休みのお店
-    deadline: deadlineFor(date, s).toISOString(),
-    current: current ? { ...current, ...allocated } : null,
-    items: items.map((it) => {
-      const p = previewShare(orders, date, it.price, s);
-      return { ...it, company_share: p.company_share, employee_share: p.employee_share };
-    }),
-  });
+  const s = await loadSettings(c.env.DB);
+  return c.json(await dayMenu(c.env.DB, c.get('user'), c.req.query('date'), s));
 });
 
 /** 注文する(同じ日にすでに注文があれば、お弁当を変更) */
 app.post('/api/employee/orders', async (c) => {
-  const db = c.env.DB;
-  const user = c.get('user');
   const { date, menu_item_id } = await c.req.json().catch(() => ({}));
-  const s = await loadSettings(db);
-  if (isDate(date) && closedReason(date, s)) return fail(c, 400, `この日はお休みです(${closedReason(date, s)})`);
-  if (!isDate(date) || !isOrderOpen(date, s)) return fail(c, 400, 'この日の注文は締め切られています');
-  const item = await db
-    .prepare(`SELECT m.* FROM menu_items m JOIN shops s ON s.id = m.shop_id WHERE m.id = ? AND m.active = 1 AND s.active = 1`)
-    .bind(Number(menu_item_id))
-    .first();
-  if (!item) return fail(c, 400, 'このお弁当は選べません');
-  const shopClosed = await db.prepare('SELECT 1 FROM closed_days WHERE shop_id = ? AND date = ?').bind(item.shop_id, date).first();
-  if (shopClosed) return fail(c, 400, 'このお店はこの日お休みです');
-  await db
-    .prepare(
-      `INSERT INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT (user_id, delivery_date, kind) DO UPDATE SET
-         menu_item_id = excluded.menu_item_id, shop_id = excluded.shop_id,
-         item_name = excluded.item_name, price = excluded.price, updated_at = datetime('now')`
-    )
-    .bind(user.id, date, item.id, item.shop_id, item.name, item.price)
-    .run();
+  const s = await loadSettings(c.env.DB);
+  await placeOrder(c.env.DB, c.get('user'), date, menu_item_id, s, 'web');
   return c.json({ ok: true });
 });
 
 /** 注文を取り消す */
 app.delete('/api/employee/orders/:date', async (c) => {
-  const db = c.env.DB;
-  const date = c.req.param('date');
-  const s = await loadSettings(db);
-  if (!isOrderOpen(date, s)) return fail(c, 400, 'この日の注文は締め切られています');
-  await db.prepare(`DELETE FROM orders WHERE user_id = ? AND delivery_date = ? AND kind = 'bento'`).bind(c.get('user').id, date).run();
+  const s = await loadSettings(c.env.DB);
+  await cancelOrder(c.env.DB, c.get('user'), c.req.param('date'), s);
   return c.json({ ok: true });
 });
 
@@ -296,6 +216,8 @@ registerBillingRoutes(app);
 registerPortalRoutes(app, requireRole);
 // 休業日(src/closed-days.js)
 registerClosedDayRoutes(app);
+// LINE公式アカウントとの連携(src/line.js)
+registerLineRoutes(app);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 

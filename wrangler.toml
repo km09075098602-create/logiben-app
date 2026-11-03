@@ -13,3 +13,11 @@ directory = "./public"
 binding = "DB"
 database_name = "logiben"
 database_id = "00000000-0000-0000-0000-000000000000"
+
+# 秘密ではない設定
+[vars]
+# LINE公式アカウントの友だち追加URL(社員の注文画面に表示)。決まったら書く
+LINE_FRIEND_URL = ""
+# 秘密の設定(LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN)はここに書かず、
+#   npx wrangler secret put LINE_CHANNEL_SECRET
+# のように登録する(README「LINEとつなぐ手順」)

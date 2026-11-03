@@ -1,6 +1,7 @@
 -- ロジ弁 データベースの形(テーブル定義)
 -- 注意:このファイルを実行すると、データはすべて消えて作り直されます。
 
+DROP TABLE IF EXISTS line_link_codes;
 DROP TABLE IF EXISTS closed_days;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS orders;
@@ -45,9 +46,11 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   name          TEXT NOT NULL,
   department    TEXT,              -- 部署
-  active        INTEGER NOT NULL DEFAULT 1
+  active        INTEGER NOT NULL DEFAULT 1,
+  line_user_id  TEXT               -- 連携しているLINEのユーザーID(社員のみ)
 );
 CREATE UNIQUE INDEX users_login ON users (role, COALESCE(company_id, 0), login_id);
+CREATE UNIQUE INDEX users_line ON users (line_user_id) WHERE line_user_id IS NOT NULL;
 
 -- 注文
 -- 値段・商品名は注文した時点のものを記録(あとでメニューの値段が変わっても過去の注文は変わらない)
@@ -94,3 +97,10 @@ CREATE TABLE closed_days (
   note    TEXT
 );
 CREATE UNIQUE INDEX closed_days_unique ON closed_days (COALESCE(shop_id, 0), date);
+
+-- LINE連携コード(社員がWeb画面で発行し、LINEのトークに送る。10分で無効)
+CREATE TABLE line_link_codes (
+  code       TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  expires_at TEXT NOT NULL
+);
