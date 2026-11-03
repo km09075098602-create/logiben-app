@@ -1,0 +1,15 @@
+# Cloudflare の設定ファイル
+name = "logiben"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+
+# 画面(HTML/CSS/JS)は public フォルダから配信
+[assets]
+directory = "./public"
+
+# データ保管庫(D1 データベース)
+# 本番公開時は `npx wrangler d1 create logiben` で作成し、表示された id をここに貼る
+[[d1_databases]]
+binding = "DB"
+database_name = "logiben"
+database_id = "00000000-0000-0000-0000-000000000000"

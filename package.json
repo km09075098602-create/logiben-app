@@ -1,0 +1,20 @@
+{
+  "name": "logiben-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ロジ弁 お弁当注文・管理アプリ(試作)",
+  "scripts": {
+    "setup": "npm run db:reset",
+    "db:reset": "node scripts/make-seed.mjs && wrangler d1 execute logiben --local --file=db/schema.sql && wrangler d1 execute logiben --local --file=db/seed.sql",
+    "dev": "wrangler dev",
+    "test": "node --test",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.2"
+  }
+}

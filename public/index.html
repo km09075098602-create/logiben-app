@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 ログイン</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header><h1>🍱 ロジ弁</h1><span class="who">運営:達磨商事</span></header>
+  <main style="max-width:420px">
+    <div class="tabs">
+      <button type="button" data-type="employee" class="active">社員の方</button>
+      <button type="button" data-type="admin">管理者</button>
+    </div>
+    <form class="card" id="form">
+      <div id="company-field">
+        <label for="company_code">会社コード</label>
+        <input id="company_code" autocomplete="organization" placeholder="例:MT01">
+      </div>
+      <label for="login_id" id="login-label">社員番号</label>
+      <input id="login_id" autocomplete="username" required>
+      <label for="password">パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <p><button type="submit" style="width:100%">ログイン</button></p>
+    </form>
+    <p class="sub">試作版のお試し用:会社コード <b>MT01</b> / 社員番号 <b>1001</b>〜<b>1004</b> / パスワード <b>demo1234</b><br>
+      管理者:ID <b>admin</b> / パスワード <b>admin1234</b></p>
+  </main>
+  <script type="module">
+    import { api, toast } from '/common.js';
+    let type = 'employee';
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.addEventListener('click', () => {
+        type = b.dataset.type;
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        document.getElementById('company-field').hidden = type !== 'employee';
+        document.getElementById('login-label').textContent = type === 'employee' ? '社員番号' : 'ログインID';
+      })
+    );
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api('/api/login', {
+          method: 'POST',
+          body: {
+            type,
+            company_code: document.getElementById('company_code').value,
+            login_id: document.getElementById('login_id').value,
+            password: document.getElementById('password').value,
+          },
+        });
+        location.href = r.role === 'admin' ? '/admin.html' : '/order.html';
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ロジ弁 管理画面</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><h1>🍱 ロジ弁 管理画面</h1><div class="who">達磨商事</div></div>
+    <button type="button" id="logout">ログアウト</button>
+  </header>
+  <main>
+    <div class="card no-print">
+      <div class="row">
+        <div>
+          <label for="date">お届け日</label>
+          <input type="date" id="date">
+        </div>
+        <div style="flex:0 0 auto;display:flex;gap:6px">
+          <button type="button" class="secondary" id="prev">前の日</button>
+          <button type="button" class="secondary" id="next">次の日</button>
+          <button type="button" class="secondary" id="print">印刷</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="result"></div>
+
+    <h2 class="no-print">設定</h2>
+    <form class="card no-print" id="settings"></form>
+  </main>
+
+  <script type="module">
+    import { api, yen, dateLabel, deadlineLabel, esc, logout, toast } from '/common.js';
+
+    document.getElementById('logout').onclick = logout;
+    const dateInput = document.getElementById('date');
+
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    dateInput.value = today;
+
+    function shift(days) {
+      const d = new Date(dateInput.value + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + days);
+      dateInput.value = d.toISOString().slice(0, 10);
+      loadOrders();
+    }
+    document.getElementById('prev').onclick = () => shift(-1);
+    document.getElementById('next').onclick = () => shift(1);
+    document.getElementById('print').onclick = () => print();
+    dateInput.onchange = loadOrders;
+
+    async function loadOrders() {
+      const r = await api('/api/admin/orders?date=' + dateInput.value);
+      const shops = r.shops
+        .map(
+          (s) => `<div class="card">
+            <div style="display:flex;justify-content:space-between"><span class="shop-name">${esc(s.shop_name)}</span><span><b>${s.count}食</b> ・ ${yen(s.amount)}</span></div>
+            <div class="table-wrap"><table>
+              <tr><th>お弁当</th><th class="num">単価</th><th class="num">数</th></tr>
+              ${s.items.map((i) => `<tr><td>${esc(i.item_name)}</td><td class="num">${yen(i.price)}</td><td class="num"><b>${i.count}</b></td></tr>`).join('')}
+            </table></div></div>`
+        )
+        .join('');
+      const rows = r.orders
+        .map(
+          (o) => `<tr><td>${esc(o.company_name)}</td><td>${esc(o.department || '')}</td><td>${esc(o.user_name)}</td><td>${esc(o.item_name)}</td><td>${esc(o.shop_name)}</td></tr>`
+        )
+        .join('');
+      document.getElementById('result').innerHTML = `
+        <div class="card">
+          <div class="sub">${dateLabel(r.date)} の注文数(締め切り ${deadlineLabel(r.deadline)})</div>
+          <div class="big">${r.total}<span style="font-size:1rem"> 食</span></div>
+        </div>
+        ${r.total ? `<h2>お店ごと</h2>${shops}
+        <h2>注文の中身(会社・部署順)</h2>
+        <div class="card table-wrap"><table>
+          <tr><th>会社</th><th>部署</th><th>名前</th><th>お弁当</th><th>お店</th></tr>${rows}
+        </table></div>` : '<p class="sub">この日の注文はありません。</p>'}`;
+    }
+
+    async function loadSettings() {
+      const list = await api('/api/admin/settings');
+      const form = document.getElementById('settings');
+      form.innerHTML =
+        list
+          .map(
+            (s) => `<label for="s-${s.key}">${esc(s.label)}</label>
+              <input id="s-${s.key}" name="${s.key}" value="${esc(s.value)}" ${s.key === 'deadline_time' ? 'type="time"' : 'inputmode="numeric"'}>`
+          )
+          .join('') + '<p><button type="submit">設定を保存</button></p>';
+    }
+    document.getElementById('settings').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      try {
+        await api('/api/admin/settings', { method: 'PUT', body });
+        toast('保存しました');
+        loadOrders();
+      } catch (err) { toast(err.message, true); }
+    });
+
+    const me = await api('/api/me');
+    if (me.role !== 'admin') location.href = '/';
+    loadOrders();
+    loadSettings();
+  </script>
+</body>
+</html>
