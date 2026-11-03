@@ -56,6 +56,8 @@
           <div style="flex:0 0 auto"><button type="submit">メニュー追加</button></div>
         </form>
       </div>
+      <h2>日ごとの上限(特定の日だけ数を変える)</h2>
+      <div class="card" id="day-limits"></div>
     </section>
 
     <!-- ===== 休業日 ===== -->
@@ -78,6 +80,7 @@
   <script type="module">
     import { api, yen, esc, logout, toast, dateLabel, deadlineLabel } from '/common.js';
     import { renderClosedDays } from '/closed-days-ui.js';
+    import { renderDayLimits } from '/day-limits-ui.js';
     document.getElementById('logout').onclick = logout;
     const $ = (id) => document.getElementById(id);
 
@@ -205,6 +208,8 @@
         (items.map(menuRow).join('') || '<tr><td colspan="5" class="sub">まだメニューがありません</td></tr>');
       const lim = await api('/api/shop/limit');
       $('shop-limit-input').value = lim.daily_limit ?? '';
+      const dlDate = $('day-limits').querySelector('.dl-date')?.value; // 見ていた日付はそのまま
+      renderDayLimits($('day-limits'), { base: '/api/shop/day-limits', ...(dlDate ? { date: dlDate } : {}) });
     }
     $('shop-limit').addEventListener('submit', async (e) => {
       e.preventDefault();

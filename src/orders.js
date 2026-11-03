@@ -6,6 +6,7 @@
 import { allocateMonth, previewShare, isOrderOpen, orderableDates, deadlineFor, closedReason, todayJST } from './rules.js';
 import { InputError } from './master.js';
 import { pointBalance, usablePoints } from './points.js';
+import { dayOverrides, effectiveLimits } from './limits.js';
 
 /** いまの時刻(UTC "YYYY-MM-DD HH:MM:SS")。ポイントを使った時刻の記録に使う */
 const nowUtc = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -78,6 +79,7 @@ export async function dayMenu(db, user, date, s) {
   const allocated = allocateMonth(orders, s).orders.find((o) => current && o.id === current.id);
   // 残り何食か(自分の注文は数えない:自分がお弁当を変えるときに、自分の分で売り切れにならないように)
   const stock = await stockOn(db, date, user.id);
+  const overrides = await dayOverrides(db, date); // この日だけ変えた上限
   // この日に使えるポイント(この日の注文で使っているポイントは、戻して数える)
   const points = await pointsOf(db, user.id, s, { date, kind: 'bento' });
   const { results: closedShops } = await db
@@ -94,7 +96,7 @@ export async function dayMenu(db, user, date, s) {
     points,
     items: items.map((it) => {
       const p = previewShare(orders, date, it.price, s);
-      const remaining = remainingOf(it, stock);
+      const remaining = remainingOf({ ...it, ...effectiveLimits(it, overrides) }, stock);
       return { ...it, company_share: p.company_share, employee_share: p.employee_share, remaining, sold_out: remaining !== null && remaining <= 0 };
     }),
   };
@@ -139,6 +141,7 @@ export async function placeOrder(db, user, date, menuItemId, s, channel = 'web',
     .bind(Number(menuItemId))
     .first();
   if (!item) throw new InputError('このお弁当は選べません');
+  const limits = effectiveLimits(item, await dayOverrides(db, date)); // この日の上限
   const shopClosed = await db.prepare('SELECT 1 FROM closed_days WHERE shop_id = ? AND date = ?').bind(item.shop_id, date).first();
   if (shopClosed) throw new InputError('このお店はこの日お休みです');
   if (await lunchOn(db, user.id, date)) throw new InputError('この日はだるまランチを利用済みです');
@@ -157,7 +160,7 @@ export async function placeOrder(db, user, date, menuItemId, s, channel = 'web',
          item_name = excluded.item_name, price = excluded.price, channel = excluded.channel,
          points_used = excluded.points_used, updated_at = excluded.updated_at`
     )
-    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent, pointsUsed, nowUtc(), item.daily_limit ?? null, item.shop_limit ?? null)
+    .bind(user.id, date, item.id, item.shop_id, item.name, item.price, channel, s.tax_rate_percent, pointsUsed, nowUtc(), limits.daily_limit, limits.shop_limit)
     .run();
   if (!r.meta.changes) throw new InputError(`申し訳ありません。「${item.name}」はこの日売り切れです。ほかのお弁当をお選びください`);
   const month = allocateMonth(await monthOrders(db, user.id, date.slice(0, 7)), s);

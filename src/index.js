@@ -18,6 +18,7 @@ import { employeeSummary, dayMenu, placeOrder, cancelOrder, lunchOptions, record
 import { registerPortalRoutes } from './portal-routes.js';
 import { registerClosedDayRoutes } from './closed-days.js';
 import { registerLineRoutes } from './line.js';
+import { registerLimitRoutes } from './limits.js';
 import { DEFAULT_SETTINGS, deadlineFor, closedReason } from './rules.js';
 
 const app = new Hono();
@@ -241,6 +242,8 @@ registerPortalRoutes(app, requireRole);
 registerClosedDayRoutes(app);
 // LINE公式アカウントとの連携(src/line.js)
 registerLineRoutes(app);
+// 日ごとの上限(src/limits.js)
+registerLimitRoutes(app);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 

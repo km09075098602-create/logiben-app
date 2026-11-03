@@ -1,6 +1,7 @@
 -- ロジ弁 データベースの形(テーブル定義)
 -- 注意:このファイルを実行すると、データはすべて消えて作り直されます。
 
+DROP TABLE IF EXISTS day_limits;
 DROP TABLE IF EXISTS line_link_codes;
 DROP TABLE IF EXISTS closed_days;
 DROP TABLE IF EXISTS sessions;
@@ -111,3 +112,14 @@ CREATE TABLE line_link_codes (
   user_id    INTEGER NOT NULL REFERENCES users(id),
   expires_at TEXT NOT NULL
 );
+
+-- 日ごとの上限(特定の日だけ「1日に作れる数」を変える。なければ、いつもの上限を使う)
+--   menu_item_id が空 = お店全体の合計の上限 / あり = そのお弁当の上限
+CREATE TABLE day_limits (
+  id           INTEGER PRIMARY KEY,
+  shop_id      INTEGER NOT NULL REFERENCES shops(id),
+  menu_item_id INTEGER REFERENCES menu_items(id),
+  date         TEXT NOT NULL,
+  daily_limit  INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX day_limits_unique ON day_limits (shop_id, COALESCE(menu_item_id, 0), date);

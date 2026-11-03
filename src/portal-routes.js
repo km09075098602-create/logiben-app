@@ -9,17 +9,19 @@ import { loadSettings } from './settings.js';
 import { ordersBetween, dayOrders, dayLunches } from './queries.js';
 import { isMonth, monthRange } from './billing-routes.js';
 import { menuFields, limitOf } from './master.js';
+import { dayOverrides } from './limits.js';
 
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 const bad = (c, message) => c.json({ error: message }, 400);
 
 /** お弁当ごとの数に「1日の上限」をつける(お店の画面で「上限 ○食」と出すため) */
-async function withLimits(db, items) {
+async function withLimits(db, items, date) {
   if (!items.length) return items;
   const ids = items.map((i) => i.menu_item_id);
   const { results } = await db.prepare(`SELECT id, daily_limit FROM menu_items WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
   const limit = new Map(results.map((r) => [r.id, r.daily_limit]));
-  return items.map((i) => ({ ...i, daily_limit: limit.get(i.menu_item_id) ?? null }));
+  const o = await dayOverrides(db, date); // この日だけ変えた上限
+  return items.map((i) => ({ ...i, daily_limit: o.items.has(i.menu_item_id) ? o.items.get(i.menu_item_id) : limit.get(i.menu_item_id) ?? null }));
 }
 
 export function registerPortalRoutes(app, requireRole) {
@@ -94,8 +96,9 @@ export function registerPortalRoutes(app, requireRole) {
       deadline: deadline.toISOString(),
       fixed: new Date() >= deadline, // 締め切りを過ぎていれば数は確定
       total: r.total,
-      items: await withLimits(c.env.DB, r.shops[0]?.items || []),
-      shop_limit: (await c.env.DB.prepare('SELECT daily_limit FROM shops WHERE id = ?').bind(shopId).first())?.daily_limit ?? null,
+      items: await withLimits(c.env.DB, r.shops[0]?.items || [], date),
+      shop_limit: (await dayOverrides(c.env.DB, date)).shops.get(shopId) ??
+        (await c.env.DB.prepare('SELECT daily_limit FROM shops WHERE id = ?').bind(shopId).first())?.daily_limit ?? null,
       amount: r.shops[0]?.amount || 0,
       orders: r.orders.map((o) => ({ company_name: o.company_name, department: o.department, user_name: o.user_name, item_name: o.item_name })),
       lunches: await dayLunches(c.env.DB, date, { shopId }), // だるまランチの利用

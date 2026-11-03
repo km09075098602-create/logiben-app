@@ -54,6 +54,7 @@
   <script type="module">
     import { api, yen, esc, logout, toast } from '/common.js';
     import { renderClosedDays } from '/closed-days-ui.js';
+    import { renderDayLimits } from '/day-limits-ui.js';
 
     document.getElementById('logout').onclick = logout;
 
@@ -115,6 +116,10 @@
               <summary class="sub">お店のログイン用アカウント(注文数・メニュー・お支払いを見る画面)</summary>
               <div class="accounts" data-kind="shop" data-owner="${s.id}"></div>
             </details>
+            <details style="margin-top:6px" class="dl-details" data-shop-id="${s.id}">
+              <summary class="sub">日ごとの上限(特定の日だけ作れる数を変える。お店の画面からも設定できます)</summary>
+              <div class="dl-box" style="margin-top:6px"></div>
+            </details>
             <details style="margin-top:6px">
               <summary class="sub">このお店の休業日(お店の画面からも登録できます)</summary>
               <div class="closed-box" data-shop-id="${s.id}" style="margin-top:6px"></div>
@@ -123,6 +128,12 @@
         )
         .join('');
       document.querySelectorAll('#shops .accounts').forEach(loadAccounts);
+      // 日ごとの上限は、開いたときに読み込む
+      document.querySelectorAll('#shops .dl-details').forEach((d) =>
+        d.addEventListener('toggle', () => {
+          if (d.open) renderDayLimits(d.querySelector('.dl-box'), { base: `/api/admin/shops/${d.dataset.shopId}/day-limits` });
+        })
+      );
       document.querySelectorAll('#shops .closed-box').forEach((el) =>
         renderClosedDays(el, { base: '/api/admin/closed-days', shopId: Number(el.dataset.shopId) })
       );

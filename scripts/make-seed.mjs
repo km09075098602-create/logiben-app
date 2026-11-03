@@ -82,6 +82,8 @@ for (const [id, shopId, login, pw, name] of shopUsers)
 
 // 日付は「このSQLを実行した日(日本時間)」を基準に SQLite で計算する
 const jst = "date('now', '+9 hours'";
+// 日ごとの上限の例:2日後だけ、唐揚げ弁当を6食まで作れる
+lines.push(`INSERT INTO day_limits (shop_id, menu_item_id, date, daily_limit) VALUES (1, 2, ${jst}, '+2 days'), 6);`);
 const orderSql = (uid, item, dateExpr, extraWhere = '') =>
   `INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) ` +
   `SELECT ${uid}, d, ${item[0]}, ${item[1]}, ${q(item[2])}, ${item[4]} FROM (SELECT ${dateExpr} AS d) ` +

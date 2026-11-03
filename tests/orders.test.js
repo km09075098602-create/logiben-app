@@ -205,3 +205,24 @@ test('上限0は「この日は作らない」(すぐ売り切れ)', async () =>
   assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).sold_out, true);
   await assert.rejects(placeOrder(db, user, '2027-01-07', 1, s), /売り切れ/);
 });
+
+// ---------- 日ごとの上限 ----------
+test('日ごとの上限:その日だけ、いつもの上限より優先される', async () => {
+  addUsers();
+  db.raw.exec(`UPDATE menu_items SET daily_limit = 1 WHERE id = 1`); // いつもは1食
+  db.raw.exec(`INSERT INTO day_limits (shop_id, menu_item_id, date, daily_limit) VALUES (1, 1, '2027-01-07', 2)`); // 1/7だけ2食
+  assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).remaining, 2);
+  assert.equal((await dayMenu(db, user, '2027-01-08', s)).items.find((i) => i.id === 1).remaining, 1);
+  await placeOrder(db, { id: 2 }, '2027-01-07', 1, s);
+  await placeOrder(db, { id: 3 }, '2027-01-07', 1, s); // 1/7は2食目まで通る
+  await assert.rejects(placeOrder(db, { id: 4 }, '2027-01-07', 1, s), /売り切れ/);
+  await placeOrder(db, { id: 2 }, '2027-01-08', 1, s);
+  await assert.rejects(placeOrder(db, { id: 3 }, '2027-01-08', 1, s), /売り切れ/); // 1/8はいつもの1食
+});
+
+test('日ごとの上限:お店全体の合計も、その日だけ変えられる(0=その日は作らない)', async () => {
+  db.raw.exec(`INSERT INTO day_limits (shop_id, menu_item_id, date, daily_limit) VALUES (1, NULL, '2027-01-07', 0)`);
+  assert.equal((await dayMenu(db, user, '2027-01-07', s)).items.find((i) => i.id === 1).sold_out, true);
+  await assert.rejects(placeOrder(db, user, '2027-01-07', 1, s), /売り切れ/);
+  assert.equal((await dayMenu(db, user, '2027-01-08', s)).items.find((i) => i.id === 1).remaining, null);
+});
