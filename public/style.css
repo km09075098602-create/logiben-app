@@ -143,3 +143,9 @@ header { flex-wrap: wrap; }
 header > div:first-child { flex: 1 1 200px; min-width: 0; }
 header h1 { white-space: nowrap; }
 .nav { margin-left: auto; }
+
+/* ボタンの形をしたリンク(CSV保存など) */
+a.btn { display: inline-block; text-decoration: none; }
+.btn.secondary { background: #fff; color: var(--main); border: 1px solid var(--main); }
+.btn.small { padding: 5px 10px; font-size: .82rem; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--text); }

@@ -66,3 +66,10 @@
   .page tr { break-inside: avoid; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- 請求・支払い明細 ---------- */
+.bill { margin: 12px 0 6px; }
+.bill td, .bill th { padding: 7px 10px; }
+.page .num { text-align: right; white-space: nowrap; }
+.page { scroll-margin-top: 12px; }
+@media screen { .page { overflow-x: auto; } }  /* スマホでは明細の表を横スクロール */

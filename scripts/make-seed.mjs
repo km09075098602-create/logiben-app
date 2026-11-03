@@ -22,6 +22,7 @@ const SETTING_LABELS = {
   service_fee: 'サービス利用料(1食 円)',
   agency_fee_percent: '営業代行料(%)',
   order_days_ahead: '何日先まで注文できるか(日)',
+  shop_period_anchor: 'お店への支払いの区切りの起点日(この日から2週間ずつ)',
 };
 
 const companies = [

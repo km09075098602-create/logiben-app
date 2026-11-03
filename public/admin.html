@@ -13,6 +13,7 @@
       <a href="/admin.html" class="active">注文数</a>
       <a href="/manage.html">登録</a>
       <a href="/print.html">印刷</a>
+      <a href="/billing.html">請求</a>
       <button type="button" id="logout">ログアウト</button>
     </nav>
   </header>
@@ -93,7 +94,7 @@
         list
           .map(
             (s) => `<label for="s-${s.key}">${esc(s.label)}</label>
-              <input id="s-${s.key}" name="${s.key}" value="${esc(s.value)}" ${s.key === 'deadline_time' ? 'type="time"' : 'inputmode="numeric"'}>`
+              <input id="s-${s.key}" name="${s.key}" value="${esc(s.value)}" ${s.key === 'deadline_time' ? 'type="time"' : s.key === 'shop_period_anchor' ? 'type="date"' : 'inputmode="numeric"'}>`
           )
           .join('') + '<p><button type="submit">設定を保存</button></p>';
     }

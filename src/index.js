@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { verifyPassword } from './password.js';
 import { registerMasterRoutes } from './master.js';
+import { registerBillingRoutes } from './billing-routes.js';
+import { loadSettings } from './settings.js';
 import {
   DEFAULT_SETTINGS,
   allocateMonth,
@@ -24,16 +26,6 @@ const SESSION_DAYS = 30;
 
 // ---------- 共通の部品 ----------
 
-/** 設定を読み込む(数値は数値に変換) */
-async function loadSettings(db) {
-  const { results } = await db.prepare('SELECT key, value FROM settings').all();
-  const s = { ...DEFAULT_SETTINGS };
-  for (const { key, value } of results) {
-    if (!(key in DEFAULT_SETTINGS)) continue;
-    s[key] = typeof DEFAULT_SETTINGS[key] === 'number' ? Number(value) : value;
-  }
-  return s;
-}
 
 /** ある社員の、ある月(YYYY-MM)の注文 */
 async function monthOrders(db, userId, month) {
@@ -274,6 +266,8 @@ app.put('/api/admin/settings', async (c) => {
     const value = String(raw).trim();
     if (key === 'deadline_time') {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return fail(c, 400, '締め切り時刻は 09:30 のように入力してください');
+    } else if (key === 'shop_period_anchor') {
+      if (!isDate(value) || Number.isNaN(Date.parse(value))) return fail(c, 400, '日付を正しく入力してください');
     } else if (!/^\d+$/.test(value)) {
       return fail(c, 400, `「${key}」には0以上の整数を入力してください`);
     }
@@ -285,6 +279,8 @@ app.put('/api/admin/settings', async (c) => {
 
 // お店・メニュー・会社・社員の登録(src/master.js)
 registerMasterRoutes(app);
+// 請求・支払い・CSV(src/billing-routes.js)
+registerBillingRoutes(app);
 
 app.all('/api/*', (c) => fail(c, 404, '見つかりません'));
 
