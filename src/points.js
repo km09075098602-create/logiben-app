@@ -1,12 +1,14 @@
 // =============================================================
 // ポイント(社員への還元)のルール
 //
-// - もらえる:食事をした日(お届け日・だるまランチの日)に、1回 point_per_use ポイント
-//   (取り消した注文はもらえない。未来の注文は、その日が来たらもらえる)
+// - もらえる:1回の利用につき point_per_use ポイント。
+//   その月の利用分を締めたあと、point_grant_delay_months か月後の1日にまとめてもらえる
+//   (初期値 1:11月の利用分 → 12月1日。支払いが済んだ次の月から使える)
+//   取り消した注文はもらえない。まだ食事をしていない注文は数えない
 // - 使える :注文のときに選ぶ。1回 point_max_per_order ポイントまで、値段まで
 // - 使ったポイントは「先にお弁当代から引いて、残りを会社と社員で半分ずつ」(B方式)。
 //   お店への支払いは変わらない(ポイント分は達磨商事がお店に払う)
-// - 有効期限:もらった日から point_expiry_months か月。古いポイントから先に使う
+// - 有効期限:もらった日(1日)から point_expiry_months か月。古いポイントから先に使う
 //
 // 残高は、注文の記録から毎回計算する(別の帳簿を持たないので、取り消しなどでずれない)。
 // =============================================================
@@ -20,6 +22,11 @@ export function addMonths(date, months) {
   return target.toISOString().slice(0, 10);
 }
 
+/** その利用分のポイントをもらえる日(利用した月の delay か月後の1日) */
+export function grantDateOf(date, s) {
+  return addMonths(date.slice(0, 7) + '-01', s.point_grant_delay_months ?? 1);
+}
+
 /** データベースの時刻(UTC "YYYY-MM-DD HH:MM:SS")→ 日本時間の日付 */
 export const jstDateOf = (utc) => new Date(new Date(utc.replace(' ', 'T') + 'Z').getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
@@ -28,13 +35,18 @@ export const jstDateOf = (utc) => new Date(new Date(utc.replace(' ', 'T') + 'Z')
  * @param {Array<{delivery_date:string, used_at:string, points_used?:number}>} orders その社員の注文(取り消したものは含まない)
  *   used_at:ポイントを使った時刻(注文を最後に保存した時刻。UTC "YYYY-MM-DD HH:MM:SS")
  * @param {string} today 今日(日本時間)
- * @returns {{balance:number, earned_total:number, used_total:number, expired_total:number, next_expiry:{date:string, amount:number}|null}}
+ * @returns 残高・もらった合計・使った合計・期限切れ合計・次に期限が来る分・これからもらえる分(pending)
  */
 export function pointBalance(orders, s, today) {
-  if (!s.points_enabled) return { balance: 0, earned_total: 0, used_total: 0, expired_total: 0, next_expiry: null };
+  if (!s.points_enabled) return { balance: 0, earned_total: 0, used_total: 0, expired_total: 0, next_expiry: null, pending: [] };
   const events = [];
+  const pending = new Map(); // もらえる日 → ポイント(食事は済んだが、まだもらえる日が来ていない分)
   for (const o of orders) {
-    if (o.delivery_date <= today) events.push({ date: o.delivery_date, type: 'earn', amount: s.point_per_use });
+    if (o.delivery_date <= today) {
+      const grant = grantDateOf(o.delivery_date, s);
+      if (grant <= today) events.push({ date: grant, type: 'earn', amount: s.point_per_use });
+      else pending.set(grant, (pending.get(grant) || 0) + s.point_per_use);
+    }
     if (o.points_used > 0) events.push({ date: jstDateOf(o.used_at), type: 'use', amount: o.points_used });
   }
   // 同じ日なら「もらう」を先に
@@ -70,7 +82,14 @@ export function pointBalance(orders, s, today) {
   }
   expireUntil(today);
   const next = lots[0] ? { date: lots[0].expires, amount: lots.filter((l) => l.expires === lots[0].expires).reduce((a, l) => a + l.amount, 0) } : null;
-  return { balance: lots.reduce((a, l) => a + l.amount, 0), earned_total: earned, used_total: used, expired_total: expired, next_expiry: next };
+  return {
+    balance: lots.reduce((a, l) => a + l.amount, 0),
+    earned_total: earned,
+    used_total: used,
+    expired_total: expired,
+    next_expiry: next,
+    pending: [...pending].sort().map(([date, amount]) => ({ date, amount })), // これからもらえる分
+  };
 }
 
 /** この注文で使えるポイント(残高・1回の上限・値段のうち一番小さい数) */

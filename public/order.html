@@ -31,6 +31,9 @@
 
     document.getElementById('logout').onclick = logout;
 
+    /** "2027-02-01" → "2027年2月1日" */
+    const jpDate = (d) => d.replace(/^(\d+)-0?(\d+)-0?(\d+)$/, '$1年$2月$3日');
+
     async function loadSummary() {
       const s = await api('/api/employee/summary');
       const pct = Math.min(100, Math.round((s.used / s.cap) * 100));
@@ -52,7 +55,8 @@
           </div>
           <div class="sub">今月のご利用 ${s.orders.length}食${lunchCount ? `(うちだるまランチ ${lunchCount}回)` : ''} ・ あなたのお支払い 合計 ${yen(myTotal)}</div>
           ${s.points.enabled ? `<div class="points">🎁 ポイント <b>${s.points.balance}</b> pt
-            <span class="sub">(1回の利用で${s.points.per_use}pt${s.points.next_expiry ? `・${s.points.next_expiry.date.replace(/^(\d+)-0?(\d+)-0?(\d+)$/, '$1年$2月$3日')}に${s.points.next_expiry.amount}ptが期限切れ` : ''})</span></div>` : ''}
+            ${s.points.pending.map((p) => `<span class="sub">・${jpDate(p.date)}に <b>${p.amount}pt</b> もらえます</span>`).join('')}
+            <div class="sub">1回の利用で${s.points.per_use}pt(その月の利用分を、次の月の1日にまとめてお渡し)${s.points.next_expiry ? `・${jpDate(s.points.next_expiry.date)}に${s.points.next_expiry.amount}ptが期限切れ` : ''}</div></div>` : ''}
         </div>
         <a class="btn secondary" href="/lunch.html" style="display:block;text-align:center;margin-bottom:12px">🍜 だるまランチを使う(お店で食べるとき)</a>`;
       renderLine(s);

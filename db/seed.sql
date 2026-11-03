@@ -11,9 +11,10 @@ INSERT INTO settings (key, value, label, sort_order) VALUES ('agency_fee_percent
 INSERT INTO settings (key, value, label, sort_order) VALUES ('order_days_ahead', '14', '何日先まで注文できるか(日)', 9);
 INSERT INTO settings (key, value, label, sort_order) VALUES ('shop_period_anchor', '2027-01-04', 'お店への支払いの区切りの起点日(この日から2週間ずつ)', 10);
 INSERT INTO settings (key, value, label, sort_order) VALUES ('points_enabled', '1', 'ポイント還元(1=使う / 0=使わない)', 11);
-INSERT INTO settings (key, value, label, sort_order) VALUES ('point_per_use', '10', '1回の利用でもらえるポイント', 12);
-INSERT INTO settings (key, value, label, sort_order) VALUES ('point_expiry_months', '12', 'ポイントの有効期限(か月)', 13);
-INSERT INTO settings (key, value, label, sort_order) VALUES ('point_max_per_order', '50', '1回の注文で使えるポイントの上限', 14);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_per_use', '20', '1回の利用でもらえるポイント', 12);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_grant_delay_months', '1', 'ポイントをもらえる時期(利用した月の何か月後の1日か。1=翌月1日)', 13);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_expiry_months', '12', 'ポイントの有効期限(か月)', 14);
+INSERT INTO settings (key, value, label, sort_order) VALUES ('point_max_per_order', '50', '1回の注文で使えるポイントの上限', 15);
 INSERT INTO companies (id, code, name) VALUES (1, 'MT01', '松江テック株式会社');
 INSERT INTO companies (id, code, name) VALUES (2, 'SS02', '宍道湖物産株式会社');
 INSERT INTO shops (id, name) VALUES (1, 'まつえ弁当');
@@ -72,6 +73,12 @@ INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, ite
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 6, 3, '焼き魚弁当', 750 FROM (SELECT date('now', '+9 hours', 'start of month', '+28 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6') AND strftime('%m', d) = strftime('%m', date('now', '+9 hours'));
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 6, 3, '焼き魚弁当', 750 FROM (SELECT date('now', '+9 hours', 'start of month', '+29 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6') AND strftime('%m', d) = strftime('%m', date('now', '+9 hours'));
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 6, 3, '焼き魚弁当', 750 FROM (SELECT date('now', '+9 hours', 'start of month', '+30 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6') AND strftime('%m', d) = strftime('%m', date('now', '+9 hours'));
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+6 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+7 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 2, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+8 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 3, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+6 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 3, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+13 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
+INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 4, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', 'start of month', '-1 month', '+9 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 4, d, 6, 3, '焼き魚弁当', 750 FROM (SELECT date('now', '+9 hours', '+0 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 5, d, 2, 1, '唐揚げ弁当', 600 FROM (SELECT date('now', '+9 hours', '+0 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');
 INSERT OR IGNORE INTO orders (user_id, delivery_date, menu_item_id, shop_id, item_name, price) SELECT 7, d, 1, 1, '日替わり弁当', 540 FROM (SELECT date('now', '+9 hours', '+0 days') AS d) WHERE strftime('%w', d) NOT IN ('0', '6');

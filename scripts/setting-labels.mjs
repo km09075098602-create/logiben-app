@@ -13,6 +13,7 @@ export const SETTING_LABELS = {
   shop_period_anchor: 'お店への支払いの区切りの起点日(この日から2週間ずつ)',
   points_enabled: 'ポイント還元(1=使う / 0=使わない)',
   point_per_use: '1回の利用でもらえるポイント',
+  point_grant_delay_months: 'ポイントをもらえる時期(利用した月の何か月後の1日か。1=翌月1日)',
   point_expiry_months: 'ポイントの有効期限(か月)',
   point_max_per_order: '1回の注文で使えるポイントの上限',
 };
